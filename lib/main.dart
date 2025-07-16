@@ -44,7 +44,7 @@ class _HomePageState extends State<HomePage> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       _speech = await SpeechRecognition.init();
-      getModelPath(name: _speech.modelPath!); // Send path to rust
+      getModelPath(path: _speech.modelPath!); // Send path to rust
     });
   }
 

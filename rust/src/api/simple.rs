@@ -3,8 +3,8 @@ pub fn greet(name: String) -> String {
     format!("Hello, {name}! (From Rust)")
 }
 
-pub fn get_model_path(name: String) {
-    dbg!(name);
+pub fn get_model_path(path: String) {
+    println!("Model path: {path}");
 }
 
 #[flutter_rust_bridge::frb(init)]

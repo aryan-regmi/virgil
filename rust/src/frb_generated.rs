@@ -67,12 +67,12 @@ fn wire__crate__api__simple__get_model_path_impl(
             };
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_name = <String>::sse_decode(&mut deserializer);
+            let api_path = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, ()>((move || {
                     let output_ok = Result::<_, ()>::Ok({
-                        crate::api::simple::get_model_path(api_name);
+                        crate::api::simple::get_model_path(api_path);
                     })?;
                     Ok(output_ok)
                 })())

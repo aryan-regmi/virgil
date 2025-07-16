@@ -77,7 +77,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
 }
 
 abstract class RustLibApi extends BaseApi {
-  Future<void> crateApiSimpleGetModelPath({required String name});
+  Future<void> crateApiSimpleGetModelPath({required String path});
 
   String crateApiSimpleGreet({required String name});
 
@@ -93,12 +93,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   });
 
   @override
-  Future<void> crateApiSimpleGetModelPath({required String name}) {
+  Future<void> crateApiSimpleGetModelPath({required String path}) {
     return handler.executeNormal(
       NormalTask(
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_String(name, serializer);
+          sse_encode_String(path, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -111,14 +111,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: null,
         ),
         constMeta: kCrateApiSimpleGetModelPathConstMeta,
-        argValues: [name],
+        argValues: [path],
         apiImpl: this,
       ),
     );
   }
 
   TaskConstMeta get kCrateApiSimpleGetModelPathConstMeta =>
-      const TaskConstMeta(debugName: "get_model_path", argNames: ["name"]);
+      const TaskConstMeta(debugName: "get_model_path", argNames: ["path"]);
 
   @override
   String crateApiSimpleGreet({required String name}) {
