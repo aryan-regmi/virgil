@@ -1,3 +1,5 @@
+outdir := 
+
 ndk_version := 27.0.12077973
 abi := armeabi-v7a
 # abi := arm64-v8a
@@ -10,4 +12,6 @@ build:
 	ANDROID_NDK=$(ndk_path) \
 	CMAKE_ANDROID_ARCH_ABI=$(abi) \
 	BINDGEN_EXTRA_ARGS=--sysroot=$(ndk_toolchain)/sysroot \
-	cargo ndk -t $(abi) build --release
+	cargo ndk -t $(abi) -o ../android/nativeLibs/ build --release
+	
+	
