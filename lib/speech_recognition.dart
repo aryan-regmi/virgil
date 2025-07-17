@@ -1,14 +1,30 @@
 import 'dart:async';
+import 'dart:ffi';
 import 'dart:io';
 
+import 'package:ffi/ffi.dart' as ffi;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_sound/flutter_sound.dart';
 import 'package:http/http.dart' as http;
+import 'package:path/path.dart' as path;
 import 'package:logger/logger.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 /// The logger responsible for all log messages from `SpeechRecognition`.
 var _logger = Logger();
+
+// Load the rust library
+var _libraryPath = path.join(
+  Directory.current.path,
+  'android',
+  'nativeLibs',
+  'armeabi-v7a',
+  'libnative.so',
+);
+final nativeLib = DynamicLibrary.open(_libraryPath);
+
+typedef _LoadModelNativeFn = Void Function(Pointer<ffi.Utf8>);
+typedef _LoadModelFn = void Function(Pointer<ffi.Utf8>);
 
 /// Responsible for all speech recognition.
 class SpeechRecognition {
@@ -48,6 +64,11 @@ class SpeechRecognition {
     // Download Whisper model
     var modelManager = await _WhisperModelManager.init();
     speech.modelPath = modelManager.modelPath;
+
+    // Load and invoke the `load_model` function in Rust
+    final _LoadModelFn loadModelFn = nativeLib
+        .lookupFunction<_LoadModelNativeFn, _LoadModelFn>('load_model');
+    loadModelFn(speech.modelPath!.toNativeUtf8());
 
     // Request permissions
     var status = await Permission.microphone.request();

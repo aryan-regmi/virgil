@@ -41,6 +41,8 @@ pub fn load_model(path: *const ffi::c_char) {
     {
         model().lock().unwrap().state = Some(state);
     }
+
+    dbg!("Model Loaded!");
 }
 
 /// Checks if the given wake word is detected in the audio data.
