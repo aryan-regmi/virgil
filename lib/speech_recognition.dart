@@ -4,27 +4,33 @@ import 'dart:io';
 
 import 'package:ffi/ffi.dart' as ffi;
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_sound/flutter_sound.dart';
 import 'package:http/http.dart' as http;
-import 'package:path/path.dart' as path;
 import 'package:logger/logger.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:virgil/native_lib_loader.dart';
 
 /// The logger responsible for all log messages from `SpeechRecognition`.
 var _logger = Logger();
 
-// Load the rust library
-var _libraryPath = path.join(
-  Directory.current.path,
-  'android',
-  'nativeLibs',
-  'armeabi-v7a',
-  'libnative.so',
-);
-final nativeLib = DynamicLibrary.open(_libraryPath);
-
+// Function types for native library.
 typedef _LoadModelNativeFn = Void Function(Pointer<ffi.Utf8>);
 typedef _LoadModelFn = void Function(Pointer<ffi.Utf8>);
+
+/// Copy file from assets into application's documents directory.
+Future<File> getFileFromAssets(String assetPath, String filename) async {
+  final Directory docDir = await getApplicationDocumentsDirectory();
+  final String localPath = docDir.path;
+  final String targetFilePath = '$localPath/$filename';
+  File targetFile = File(targetFilePath);
+  final asset = await rootBundle.load(assetPath);
+  final buffer = asset.buffer;
+  return targetFile.writeAsBytes(
+    buffer.asUint8List(asset.offsetInBytes, asset.lengthInBytes),
+  );
+}
 
 /// Responsible for all speech recognition.
 class SpeechRecognition {
@@ -66,9 +72,11 @@ class SpeechRecognition {
     speech.modelPath = modelManager.modelPath;
 
     // Load and invoke the `load_model` function in Rust
-    final _LoadModelFn loadModelFn = nativeLib
-        .lookupFunction<_LoadModelNativeFn, _LoadModelFn>('load_model');
-    loadModelFn(speech.modelPath!.toNativeUtf8());
+    final NativeLibLoader loader = NativeLibLoader('libnative.so');
+    await loader.loadLib();
+    final _LoadModelFn? loadModelFn = loader.nativeLib
+        ?.lookupFunction<_LoadModelNativeFn, _LoadModelFn>('load_model');
+    loadModelFn!(speech.modelPath!.toNativeUtf8());
 
     // Request permissions
     var status = await Permission.microphone.request();
@@ -169,7 +177,8 @@ class _WhisperModelManager {
   //
   /// Downloads the model if necessary and returns its path.
   static Future<String> _downloadModel() async {
-    final modelPath = 'models/$_modelName';
+    final documentsDir = await getApplicationDocumentsDirectory();
+    final modelPath = '${documentsDir.path}/$_modelName';
     final file = File(modelPath);
 
     if (await file.exists()) {
