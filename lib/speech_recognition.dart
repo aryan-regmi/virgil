@@ -10,10 +10,12 @@ import 'package:http/http.dart' as http;
 import 'package:logger/logger.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:virgil/native_lib_loader.dart';
 
 /// The logger responsible for all log messages from `SpeechRecognition`.
 var _logger = Logger();
+
+/// The native library to load.
+final nativeLib = DynamicLibrary.open('libnative.so');
 
 // Function types for native library.
 typedef _LoadModelNativeFn = Void Function(Pointer<ffi.Utf8>);
@@ -72,11 +74,9 @@ class SpeechRecognition {
     speech.modelPath = modelManager.modelPath;
 
     // Load and invoke the `load_model` function in Rust
-    final NativeLibLoader loader = NativeLibLoader('libnative.so');
-    await loader.loadLib();
-    final _LoadModelFn? loadModelFn = loader.nativeLib
-        ?.lookupFunction<_LoadModelNativeFn, _LoadModelFn>('load_model');
-    loadModelFn!(speech.modelPath!.toNativeUtf8());
+    final loadModel = nativeLib
+        .lookupFunction<_LoadModelNativeFn, _LoadModelFn>('load_model');
+    loadModel(speech.modelPath!.toNativeUtf8());
 
     // Request permissions
     var status = await Permission.microphone.request();
