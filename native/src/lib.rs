@@ -1,7 +1,7 @@
 use std::{
     ffi,
     ptr::slice_from_raw_parts,
-    sync::{LazyLock, Mutex},
+    sync::{LazyLock, Mutex, MutexGuard},
 };
 
 use whisper_rs::{
@@ -15,8 +15,10 @@ use whisper_rs::{
 struct Model {
     state: Option<WhisperState>,
     audio_data: Option<Vec<f32>>,
+    transcript: Option<String>,
 }
 
+/// The state maintained by the library.
 static MODEL: LazyLock<Mutex<Model>> = LazyLock::new(|| Mutex::new(Model::default()));
 
 /// Loads the Whisper model from the given path.
@@ -56,36 +58,23 @@ pub fn update_audio_data(audio_data: *const ffi::c_float, len: u64) {
     }
 }
 
-// TODO: Make this a part of `Model` and allow Flutter to change it.
-//
-/// The wake words recognized by the app.
-const WAKE_WORDS: [&str; 1] = ["Wake"];
-
 /// Checks if any wake words are present in the provided audio data.
 #[unsafe(no_mangle)]
 pub fn detect_wake_words() -> bool {
     let model = MODEL.lock().unwrap();
     if let Some(audio_data) = &model.audio_data {
-        let mut transcript = String::with_capacity(256);
-
         // Run the model
-        let mut model = MODEL.lock().unwrap();
-        if let Some(state) = &mut model.state {
-            let params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
-            state.full(params, audio_data).unwrap();
-
-            // Get the results
-            let num_segments = state.full_n_segments().unwrap();
-            for i in 0..num_segments {
-                let segment = state.full_get_segment_text(i).unwrap();
-                transcript.push_str(&segment);
-            }
-        }
+        let mut transcript = String::with_capacity(256);
+        run_model(audio_data, &mut transcript);
 
         // Check transcript for wake words
         let lowered = transcript.to_lowercase();
         for wake_word in WAKE_WORDS {
-            if lowered.contains(&wake_word.to_lowercase()) {
+            let idx = lowered.find(&wake_word.to_lowercase());
+            if let Some(idx) = idx {
+                // Remove the wake word from the transcript
+                transcript.drain(idx..wake_word.len());
+                update_transcript(model, &transcript);
                 return true;
             }
         }
@@ -94,33 +83,54 @@ pub fn detect_wake_words() -> bool {
     false
 }
 
-// NOTE: Examples of how to send and receive data from byte buffers.
+/// Transcribes the audio data.
+#[unsafe(no_mangle)]
+pub fn transcribe() -> *const u8 {
+    let mut transcript = String::with_capacity(1024);
+    let ptr = transcript.as_mut_ptr();
+    std::mem::forget(transcript);
+    ptr
+}
+
+/// Frees the memory used by Rust's transcript.
+#[unsafe(no_mangle)]
+pub fn free_transcript(ptr: *mut u8, len: u64) {
+    if ptr.is_null() || len == 0 {
+        return;
+    }
+    let len = len as usize;
+    unsafe {
+        let _ = String::from_raw_parts(ptr, len, len);
+    }
+}
+
+// TODO: Make this a part of `Model` and allow Flutter to change it.
 //
-// /// Returns the model path to Dart.
-// #[unsafe(no_mangle)]
-// pub fn get_model_path(out_len: *mut u64) -> *mut u8 {
-//     let path = MODEL_PATH.lock().unwrap();
-//     if out_len.is_null() {
-//         return std::ptr::null::<u8>().cast_mut();
-//     }
-//     unsafe { *out_len = path.len() as u64 }
-//
-//     // Allocate new buffer and copy the data into it
-//     let mut buf = path.clone();
-//     let ptr = buf.as_mut_ptr();
-//     std::mem::forget(buf);
-//
-//     ptr
-// }
-//
-// /// Frees the memory for returned in `get_model`.
-// #[unsafe(no_mangle)]
-// pub fn free_model_path(ptr: *mut u8, len: u64) {
-//     if ptr.is_null() || len == 0 {
-//         return;
-//     }
-//     let len = len as usize;
-//     unsafe {
-//         let _ = String::from_raw_parts(ptr, len, len);
-//     }
-// }
+/// The wake words recognized by the app.
+const WAKE_WORDS: [&str; 1] = ["Wake"];
+
+/// Updates the model's transcript.
+fn update_transcript(mut model: MutexGuard<Model>, new_transcript: &str) {
+    if let Some(transcript) = &mut model.transcript {
+        transcript.clear();
+        transcript.push_str(new_transcript);
+    } else {
+        model.transcript = Some(new_transcript.into())
+    }
+}
+
+/// Runs the model
+fn run_model(audio_data: &[f32], transcript: &mut String) {
+    let mut model = MODEL.lock().unwrap();
+    if let Some(state) = &mut model.state {
+        let params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
+        state.full(params, audio_data).unwrap();
+
+        // Get the results
+        let num_segments = state.full_n_segments().unwrap();
+        for i in 0..num_segments {
+            let segment = state.full_get_segment_text(i).unwrap();
+            transcript.push_str(&segment);
+        }
+    }
+}

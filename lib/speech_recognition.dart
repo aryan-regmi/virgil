@@ -54,7 +54,7 @@ class SpeechRecognition {
       throw RecordingPermissionException('Microphone permissions not granted');
     }
 
-    // Initalize listener
+    // Initalize microphone
     _listener.openRecorder();
 
     // Initalize listener that runs speech recognition
