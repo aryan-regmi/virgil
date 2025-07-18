@@ -24,6 +24,8 @@ class SpeechRecognition {
   /// Determines if the microphone is listening.
   bool isListening = false;
 
+  String? text;
+
   /// The sample rate in `Hz`.
   final int _sampleRate;
 
@@ -122,6 +124,7 @@ class SpeechRecognition {
   /// Processes the transcribe commands.
   Future<void> _processCommands(String commands) async {
     _logger.i('Command received: $commands');
+    text = commands;
     // FIXME: Finish impl!
   }
 }

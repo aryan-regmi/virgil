@@ -74,7 +74,11 @@ class _MyHomePageState extends State<MyHomePage> {
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[listenButton, pauseButton],
+          children: <Widget>[
+            listenButton,
+            pauseButton,
+            Text(_speech.text == null ? '' : _speech.text!),
+          ],
         ),
       ),
     );
