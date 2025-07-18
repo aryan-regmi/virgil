@@ -18,16 +18,19 @@ var _logger = Logger();
 final nativeLib = DynamicLibrary.open('libnative.so');
 
 // Function types for native library.
-// -----------------------------------------
+// =========================================
+
 typedef _LoadModelNativeFn = Void Function(Pointer<Utf8>);
 typedef _LoadModelFn = void Function(Pointer<Utf8>);
-
-typedef _GetAudioDataArrayNativeFn = Pointer<Pointer<Float>> Function();
 
 typedef _WakeWordDetectedNativeFn = Bool Function(Pointer<Utf8>);
 typedef _WakeWordDetectedFn = bool Function(Pointer<Utf8>);
 
-// -----------------------------------------
+typedef _TranscribeNativeFn = Pointer<Utf8> Function();
+
+typedef _GetAudioDataArrayNativeFn = Pointer<Float> Function();
+
+// =========================================
 
 /// Copy file from assets into application's documents directory.
 Future<File> getFileFromAssets(String assetPath, String filename) async {
@@ -152,8 +155,20 @@ class SpeechRecognition {
 
   /// Converts raw audio data to text by running speech recognition.
   Future<String> _transcribe(Float32List audioData) async {
-    // TODO: Call rust code
-    return 'TODO';
+    // Copy audio data
+    final getAudioDataArray = nativeLib
+        .lookupFunction<_GetAudioDataArrayNativeFn, _GetAudioDataArrayNativeFn>(
+          'get_audio_data_array',
+        );
+    var audioDataArray = getAudioDataArray() as Pointer<Pointer<Float>>;
+    for (var i = 0; i < audioData.length; i++) {
+      audioDataArray[i].value = audioData[i];
+    }
+
+    // Call Rust function
+    final transcribe = nativeLib
+        .lookupFunction<_TranscribeNativeFn, _TranscribeNativeFn>('transcribe');
+    return transcribe().toDartString();
   }
 
   /// Processes the user's commands.
@@ -170,21 +185,17 @@ class SpeechRecognition {
         .lookupFunction<_GetAudioDataArrayNativeFn, _GetAudioDataArrayNativeFn>(
           'get_audio_data_array',
         );
-    var audioDataArray = getAudioDataArray();
+    var audioDataArray = getAudioDataArray() as Pointer<Pointer<Float>>;
     for (var i = 0; i < audioData.length; i++) {
       audioDataArray[i].value = audioData[i];
     }
 
     // Call Rust function
-    // final wakeWordDetected = nativeLib
-    //     .lookupFunction<_WakeWordDetectedNativeFn, _WakeWordDetectedFn>(
-    //       'wake_word_detected',
-    //     );
-    // return wakeWordDetected(
-    //   audioDataPtr,
-    //   _sampleRate,
-    //   wakeWords.toNativeUtf8(),
-    // );
+    final wakeWordDetected = nativeLib
+        .lookupFunction<_WakeWordDetectedNativeFn, _WakeWordDetectedFn>(
+          'wake_word_detected',
+        );
+    return wakeWordDetected(wakeWords.toNativeUtf8());
   }
 }
 
