@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:virgil/messages.dart';
+import 'package:virgil/model_manager.dart';
 
 void main() {
   runApp(const MyApp());
@@ -31,22 +32,24 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  String? _text;
+  late ModelManager _manager;
 
   @override
   void initState() {
     super.initState();
-    // WidgetsBinding.instance.addPostFrameCallback((_) {
-    //   Timer.periodic(Duration(seconds: 0), (_) async {
-    //     setState(() {});
-    //   });
-    // });
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      _manager = await ModelManager.init();
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final sendButton = ElevatedButton(
-      onPressed: () async => await sendModelPathToRust('some/path'),
+      onPressed: () async {
+        if (_manager.modelPath != null) {
+          await sendModelPathAndLoadModel(_manager.modelPath!);
+        }
+      },
       child: Text('Send'),
     );
 

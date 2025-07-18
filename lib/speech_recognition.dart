@@ -1,57 +1,16 @@
 import 'dart:async';
-import 'dart:ffi';
-import 'dart:io';
 
-import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_sound/flutter_sound.dart';
-import 'package:http/http.dart' as http;
-import 'package:logger/logger.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:logger/web.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:virgil/messages.dart';
+import 'package:virgil/model_manager.dart';
+import 'package:virgil/native.dart';
 
-/// The logger responsible for all log messages from `SpeechRecognition`.
-var _logger = Logger();
+final _logger = Logger();
 
-/// The native library to load.
-final nativeLib = DynamicLibrary.open('libnative.so');
-
-// Function types for native library.
-// =========================================
-
-typedef _LoadModelNativeFn = Void Function(Pointer<Utf8>);
-typedef _LoadModelFn = void Function(Pointer<Utf8>);
-
-typedef _WakeWordDetectedNativeFn = Bool Function(Pointer<Utf8>);
-typedef _WakeWordDetectedFn = bool Function(Pointer<Utf8>);
-
-typedef _TranscribeNativeFn = Pointer<Utf8> Function();
-
-typedef _GetAudioDataArrayNativeFn = Pointer<Float> Function();
-
-typedef _SetAudioDataNativeFn = Void Function(Int, Float);
-typedef _SetAudioDataFn = void Function(int, double);
-
-typedef _SetLoggerNativeFn = Void Function();
-typedef _SetLoggerFn = void Function();
-
-// =========================================
-
-/// Copy file from assets into application's documents directory.
-Future<File> getFileFromAssets(String assetPath, String filename) async {
-  final Directory docDir = await getApplicationDocumentsDirectory();
-  final String localPath = docDir.path;
-  final String targetFilePath = '$localPath/$filename';
-  File targetFile = File(targetFilePath);
-  final asset = await rootBundle.load(assetPath);
-  final buffer = asset.buffer;
-  return targetFile.writeAsBytes(
-    buffer.asUint8List(asset.offsetInBytes, asset.lengthInBytes),
-  );
-}
-
-/// Responsible for all speech recognition.
+/// Runs speech recognition on microphone input and processes the correrponding commands.
 class SpeechRecognition {
   SpeechRecognition({
     int sampleRate = 44_100,
@@ -59,23 +18,11 @@ class SpeechRecognition {
     List<String>? wakeWords,
   }) : _sampleRate = sampleRate,
        _numChannels = numChannels {
-    if (wakeWords != null) {
-      _wakeWords = wakeWords;
-    } else {
-      _wakeWords = ['Hey Virgil'];
-    }
-
     _init();
   }
 
   /// Determines if the microphone is listening.
   bool isListening = false;
-
-  /// The wake words to listen to.
-  late List<String> _wakeWords;
-
-  /// The path to the Whisper model.
-  String? _modelPath;
 
   /// The sample rate in `Hz`.
   final int _sampleRate;
@@ -92,20 +39,11 @@ class SpeechRecognition {
 
   /// Initalizes the speech recognition module.
   Future<void> _init() async {
-    // Setup Rust logger
-    final setLogger = nativeLib
-        .lookupFunction<_SetLoggerNativeFn, _SetLoggerFn>('set_logger');
-    setLogger();
-
-    // Download Whisper model
-    var modelManager = await _WhisperModelManager.init();
-    _modelPath = modelManager.modelPath;
-
-    // Load and invoke the `load_model` function in Rust
-    final loadModel = nativeLib
-        .lookupFunction<_LoadModelNativeFn, _LoadModelFn>('load_model');
-    if (_modelPath != null) {
-      loadModel(_modelPath!.toNativeUtf8());
+    // Download Whisper model and load it
+    final modelManager = await ModelManager.init();
+    final modelPath = modelManager.modelPath;
+    if (modelPath != null) {
+      await sendModelPathAndLoadModel(modelPath);
     } else {
       throw Exception('Invalid model path');
     }
@@ -124,12 +62,13 @@ class SpeechRecognition {
       if (isListening) {
         // TODO: Handle stereo (more than one channel!)
         var channelAudio = channel[0];
+        await sendAudioData(channelAudio);
 
         // Process commands only if wake word is detected
-        if (await _wakeWordDetected(channelAudio)) {
-          _logger.w("WAKE WORD DETECTED!");
-          var commands = await _transcribe(channelAudio);
-          await _processCommands(commands);
+        if (wakeWordDetected()) {
+          _logger.i('Wake word detected');
+          //   var commands = await _transcribe(channelAudio);
+          //   await _processCommands(commands);
         }
       }
     });
@@ -161,99 +100,6 @@ class SpeechRecognition {
       isListening = false;
       await _listener.stopRecorder();
       await _listener.closeRecorder();
-    }
-  }
-
-  /// Converts raw audio data to text by running speech recognition.
-  Future<String> _transcribe(Float32List audioData) async {
-    // Copy audio data
-    final setAudioData = nativeLib
-        .lookupFunction<_SetAudioDataNativeFn, _SetAudioDataFn>(
-          'set_audio_data',
-        );
-    for (var i = 0; i < audioData.length; i++) {
-      setAudioData(i, audioData[i]);
-    }
-
-    // Call Rust function
-    final transcribe = nativeLib
-        .lookupFunction<_TranscribeNativeFn, _TranscribeNativeFn>('transcribe');
-    return transcribe().toDartString();
-  }
-
-  /// Processes the user's commands.
-  Future<void> _processCommands(String text) async {
-    _logger.i('Command: $text');
-  }
-
-  /// Checks if the wake word is detected.
-  Future<bool> _wakeWordDetected(Float32List audioData) async {
-    var wakeWords = _wakeWords.join("\n");
-
-    // Copy audio data
-    final setAudioData = nativeLib
-        .lookupFunction<_SetAudioDataNativeFn, _SetAudioDataFn>(
-          'set_audio_data',
-        );
-    for (var i = 0; i < audioData.length; i++) {
-      setAudioData(i, audioData[i]);
-    }
-
-    // Call Rust function
-    final wakeWordDetected = nativeLib
-        .lookupFunction<_WakeWordDetectedNativeFn, _WakeWordDetectedFn>(
-          'wake_word_detected',
-        );
-    return wakeWordDetected(wakeWords.toNativeUtf8());
-  }
-}
-
-// TODO: Choose model based on device locale.
-//
-/// Responsible for downloading the `Whisper` model if necessary.
-class _WhisperModelManager {
-  _WhisperModelManager._init();
-
-  /// The path of the downloaded model.
-  String? modelPath;
-
-  /// Name of the model.
-  static const String _modelName = 'ggml-tiny.bin';
-
-  /// Url to download the model from.
-  static const String _modelUrl =
-      'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/$_modelName';
-
-  /// Initalizes the Whisper model manager.
-  static Future<_WhisperModelManager> init() async {
-    var manager = _WhisperModelManager._init();
-    manager.modelPath = await _WhisperModelManager._downloadModel();
-    return manager;
-  }
-
-  // TODO: Add default model in `models/` so no network permission is required?
-  //
-  /// Downloads the model if necessary and returns its path.
-  static Future<String> _downloadModel() async {
-    final documentsDir = await getApplicationDocumentsDirectory();
-    final modelPath = '${documentsDir.path}/$_modelName';
-    final file = File(modelPath);
-
-    if (await file.exists()) {
-      _logger.i('Existing model found at $modelPath');
-      return modelPath;
-    }
-
-    _logger.i('Downloading `$_modelName` Whisper model from $_modelUrl ...');
-    final response = await http.get(Uri.parse(_modelUrl));
-    if (response.statusCode == 200) {
-      await file.writeAsBytes(response.bodyBytes);
-      _logger.i('Model download to $modelPath');
-      return modelPath;
-    } else {
-      throw Exception(
-        'Failed to download Whisper model: ${response.statusCode}',
-      );
     }
   }
 }
