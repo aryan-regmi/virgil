@@ -24,10 +24,3 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-  assets:
-    - native/target/aarch64-linux-android/release/libnative.so
-    - native/target/aarch64-linux-android/release/libc++_shared.so
-    - native/target/armv7-linux-androideabi/release/libnative.so
-    - native/target/armv7-linux-androideabi/release/libc++_shared.so
-    - native/target/x86_64-linux-android/release/libnative.so
-    - native/target/x86_64-linux-android/release/libc++_shared.so

@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:ffi';
 import 'dart:io';
 
-import 'package:ffi/ffi.dart' as ffi;
+import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_sound/flutter_sound.dart';
@@ -18,8 +18,16 @@ var _logger = Logger();
 final nativeLib = DynamicLibrary.open('libnative.so');
 
 // Function types for native library.
-typedef _LoadModelNativeFn = Void Function(Pointer<ffi.Utf8>);
-typedef _LoadModelFn = void Function(Pointer<ffi.Utf8>);
+// -----------------------------------------
+typedef _LoadModelNativeFn = Void Function(Pointer<Utf8>);
+typedef _LoadModelFn = void Function(Pointer<Utf8>);
+
+typedef _GetAudioDataArrayNativeFn = Pointer<Pointer<Float>> Function();
+
+typedef _WakeWordDetectedNativeFn = Bool Function(Pointer<Utf8>);
+typedef _WakeWordDetectedFn = bool Function(Pointer<Utf8>);
+
+// -----------------------------------------
 
 /// Copy file from assets into application's documents directory.
 Future<File> getFileFromAssets(String assetPath, String filename) async {
@@ -36,15 +44,29 @@ Future<File> getFileFromAssets(String assetPath, String filename) async {
 
 /// Responsible for all speech recognition.
 class SpeechRecognition {
-  SpeechRecognition._init({required int sampleRate, required int numChannels})
-    : _sampleRate = sampleRate,
-      _numChannels = numChannels;
+  SpeechRecognition({
+    int sampleRate = 44_100,
+    int numChannels = 1,
+    List<String>? wakeWords,
+  }) : _sampleRate = sampleRate,
+       _numChannels = numChannels {
+    if (wakeWords != null) {
+      _wakeWords = wakeWords;
+    } else {
+      _wakeWords = ['Hey Virgil'];
+    }
 
-  /// The path to the Whisper model.
-  String? modelPath;
+    _init();
+  }
 
   /// Determines if the microphone is listening.
   bool isListening = false;
+
+  /// The wake words to listen to.
+  late List<String> _wakeWords;
+
+  /// The path to the Whisper model.
+  String? _modelPath;
 
   /// The sample rate in `Hz`.
   final int _sampleRate;
@@ -60,23 +82,19 @@ class SpeechRecognition {
   final FlutterSoundRecorder _listener = FlutterSoundRecorder();
 
   /// Initalizes the speech recognition module.
-  static Future<SpeechRecognition> init({
-    int sampleRate = 16_000,
-    int numChannels = 1,
-  }) async {
-    var speech = SpeechRecognition._init(
-      sampleRate: sampleRate,
-      numChannels: numChannels,
-    );
-
+  Future<void> _init() async {
     // Download Whisper model
     var modelManager = await _WhisperModelManager.init();
-    speech.modelPath = modelManager.modelPath;
+    _modelPath = modelManager.modelPath;
 
     // Load and invoke the `load_model` function in Rust
     final loadModel = nativeLib
         .lookupFunction<_LoadModelNativeFn, _LoadModelFn>('load_model');
-    loadModel(speech.modelPath!.toNativeUtf8());
+    if (_modelPath != null) {
+      loadModel(_modelPath!.toNativeUtf8());
+    } else {
+      throw Exception('Invalid model path');
+    }
 
     // Request permissions
     var status = await Permission.microphone.request();
@@ -84,27 +102,27 @@ class SpeechRecognition {
       throw RecordingPermissionException('Microphone permissions not granted');
     }
 
-    // Start listening once initalized
-    speech._listener.openRecorder();
+    // Initalize listener
+    _listener.openRecorder();
 
-    return speech;
-  }
-
-  /// Starts speech recognition on microphone input.
-  Future<void> startListening() async {
-    // Record audio only if wake word is detected
+    // Initalize listener that runs speech recognition
     _micStreamController.stream.listen((channel) async {
       if (isListening) {
         // TODO: Handle stereo (more than one channel!)
         var channelAudio = channel[0];
+
+        // Process commands only if wake word is detected
         if (await _wakeWordDetected(channelAudio)) {
+          _logger.w("WAKE WORD DETECTED!");
           var commands = await _transcribe(channelAudio);
           await _processCommands(commands);
         }
       }
     });
+  }
 
-    // Start listening on the microphone
+  /// Starts listening to the microphone.
+  Future<void> startListening() async {
     await _listener.startRecorder(
       codec: Codec.pcmFloat32,
       sampleRate: _sampleRate,
@@ -145,8 +163,28 @@ class SpeechRecognition {
 
   /// Checks if the wake word is detected.
   Future<bool> _wakeWordDetected(Float32List audioData) async {
-    // TODO: Pass to recognition func in Rust
-    return false;
+    var wakeWords = _wakeWords.join("\n");
+
+    // Copy audio data
+    final getAudioDataArray = nativeLib
+        .lookupFunction<_GetAudioDataArrayNativeFn, _GetAudioDataArrayNativeFn>(
+          'get_audio_data_array',
+        );
+    var audioDataArray = getAudioDataArray();
+    for (var i = 0; i < audioData.length; i++) {
+      audioDataArray[i].value = audioData[i];
+    }
+
+    // Call Rust function
+    // final wakeWordDetected = nativeLib
+    //     .lookupFunction<_WakeWordDetectedNativeFn, _WakeWordDetectedFn>(
+    //       'wake_word_detected',
+    //     );
+    // return wakeWordDetected(
+    //   audioDataPtr,
+    //   _sampleRate,
+    //   wakeWords.toNativeUtf8(),
+    // );
   }
 }
 

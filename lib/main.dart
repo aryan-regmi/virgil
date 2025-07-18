@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:virgil/speech_recognition.dart';
 
@@ -31,33 +33,35 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  SpeechRecognition? _speech;
+  final SpeechRecognition _speech = SpeechRecognition();
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      _speech = await SpeechRecognition.init();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Timer.periodic(Duration(seconds: 0), (_) async {
+        setState(() {});
+      });
     });
   }
 
   @override
   Widget build(BuildContext context) {
     var listenButton = ElevatedButton(
-      onPressed: _speech!.isListening
+      onPressed: _speech.isListening
           ? null
-          : () async => _speech?.startListening(),
+          : () async => await _speech.startListening(),
       child: Text('Listen'),
     );
     var pauseButton = ElevatedButton(
-      onPressed: _speech!.isListening
-          ? () async => _speech?.pauseListening()
+      onPressed: _speech.isListening
+          ? () async => await _speech.pauseListening()
           : null,
       child: Text('Pause'),
     );
     var stopButton = ElevatedButton(
-      onPressed: _speech!.isListening
-          ? () async => _speech?.closeListener()
+      onPressed: _speech.isListening
+          ? () async => await _speech.closeListener()
           : null,
       child: Text('Stop'),
     );

@@ -30,3 +30,5 @@ build_emulator:
 	CMAKE_ANDROID_ARCH_ABI=x86_64 \
 	BINDGEN_EXTRA_CLANG_ARGS="--sysroot=$(sysroot) -I$(sysroot)/usr/include" \
 	cargo ndk -t $(target_emulator) -o $(outdir) build --release
+
+build: build_v7 build_v8 build_emulator
