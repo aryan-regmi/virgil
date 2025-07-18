@@ -44,3 +44,12 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 native/target
+
+# Rust related
+/.cargo/
+/target/
+
+# Generated signals
+/lib/src/bincode
+/lib/src/serde
+/lib/src/bindings
