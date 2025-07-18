@@ -1,0 +1,7 @@
+[build]
+target = ["x86_64-linux-android", "aarch64-linux-android"]
+
+[env]
+ANDROID_NDK = { value = "~/Android/Sdk/ndk/27.0.12077973", force = true }
+ANDROID_NDK_HOME = { value = "~/Android/Sdk/ndk/27.0.12077973", force = true }
+BINDGEN_EXTRA_CLANG_ARGS = { value = "\"--sysroot=~/Android/Sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/sysroot -I~/Android/Sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include\"", force = true }
