@@ -1,7 +1,5 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
-import 'package:virgil/speech_recognition.dart';
+import 'package:virgil/messages.dart';
 
 void main() {
   runApp(const MyApp());
@@ -33,37 +31,32 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  final SpeechRecognition _speech = SpeechRecognition(wakeWords: ['Wake']);
+  String? _text;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      Timer.periodic(Duration(seconds: 0), (_) async {
-        setState(() {});
-      });
-    });
+    // WidgetsBinding.instance.addPostFrameCallback((_) {
+    //   Timer.periodic(Duration(seconds: 0), (_) async {
+    //     setState(() {});
+    //   });
+    // });
   }
 
   @override
   Widget build(BuildContext context) {
-    var listenButton = ElevatedButton(
-      onPressed: _speech.isListening
-          ? null
-          : () async => await _speech.startListening(),
-      child: Text('Listen'),
+    final sendButton = ElevatedButton(
+      onPressed: () async => await sendStringToRust('Hello from flutter!'),
+      child: Text('Send'),
     );
-    var pauseButton = ElevatedButton(
-      onPressed: _speech.isListening
-          ? () async => await _speech.pauseListening()
-          : null,
-      child: Text('Pause'),
-    );
-    var stopButton = ElevatedButton(
-      onPressed: _speech.isListening
-          ? () async => await _speech.closeListener()
-          : null,
-      child: Text('Stop'),
+    final getButton = ElevatedButton(
+      onPressed: () async {
+        final text = await getStringFromRust();
+        setState(() {
+          _text = text;
+        });
+      },
+      child: Text('Get'),
     );
 
     return Scaffold(
@@ -74,7 +67,11 @@ class _MyHomePageState extends State<MyHomePage> {
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[listenButton, pauseButton, stopButton],
+          children: <Widget>[
+            sendButton,
+            getButton,
+            Text(_text ?? 'Nothing received'),
+          ],
         ),
       ),
     );
