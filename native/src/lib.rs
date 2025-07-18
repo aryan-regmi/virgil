@@ -1,10 +1,12 @@
 use std::{
     ffi,
+    fs::File,
     ptr::slice_from_raw_parts_mut,
     sync::{Mutex, OnceLock},
 };
 
 use tracing::{error, info};
+use tracing_subscriber::FmtSubscriber;
 use whisper_rs::{
     FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters, WhisperState,
 };
@@ -26,13 +28,14 @@ fn model() -> &'static Mutex<SpeechRecognitionModel> {
     })
 }
 
-/// The sample rate of the microphone.
-const SAMPLE_RATE: usize = 44_100;
+/// The size of the audio buffer.
+// const AUDIO_BUFFER_SIZE: usize = 44_100;
+const AUDIO_BUFFER_SIZE: usize = 1024 * 8;
 
 /// The audio data array used for all library calls.
 fn audio_array() -> &'static Mutex<Vec<f32>> {
     static ARRAY: OnceLock<Mutex<Vec<f32>>> = OnceLock::new();
-    ARRAY.get_or_init(|| Mutex::new(vec![0_f32; SAMPLE_RATE]))
+    ARRAY.get_or_init(|| Mutex::new(vec![0_f32; AUDIO_BUFFER_SIZE]))
 }
 
 /// Loads the model from the given path.
@@ -88,6 +91,7 @@ pub fn wake_word_detected(wake_words: *const ffi::c_char) -> bool {
 
     for wake_word in wake_words {
         if text.contains(&wake_word.to_lowercase()) {
+            let mut out = File::create("out.txt").unwrap();
             info!("Wake word detected: {}", wake_word);
             return true;
         }
@@ -142,16 +146,34 @@ pub fn get_audio_data_array() -> *const ffi::c_float {
     audio_array().lock().unwrap().as_ptr() as *const ffi::c_float
 }
 
+/// Sets the value at the specified index of the audio array.
+#[unsafe(no_mangle)]
+pub fn set_audio_data(idx: usize, value: f32) {
+    if idx > AUDIO_BUFFER_SIZE {}
+    audio_array().lock().unwrap()[idx] = value;
+}
+
 /// Resets/empties the audio data.
 #[unsafe(no_mangle)]
 pub fn reset_audio_data_array() {
     let array_ptr = get_audio_data_array().cast_mut();
     let slice = unsafe {
-        slice_from_raw_parts_mut(array_ptr, SAMPLE_RATE)
+        slice_from_raw_parts_mut(array_ptr, AUDIO_BUFFER_SIZE)
             .as_mut()
             .unwrap()
     };
     slice.fill_with(|| 0.0);
+}
+
+#[unsafe(no_mangle)]
+pub fn set_logger() {
+    let subscriber = FmtSubscriber::new();
+    tracing::subscriber::set_global_default(subscriber)
+        .map_err(|err| {
+            eprintln!("Unable to set global default subscriber");
+            err
+        })
+        .expect("Unable to setup logger");
 }
 
 #[cfg(test)]
@@ -182,11 +204,11 @@ mod tests {
 
     fn fill_audio_data_with_samples() {
         let data_ptr = get_audio_data_array().cast_mut();
-        let audio_data = unsafe { slice_from_raw_parts_mut(data_ptr, SAMPLE_RATE).as_mut() };
+        let audio_data = unsafe { slice_from_raw_parts_mut(data_ptr, AUDIO_BUFFER_SIZE).as_mut() };
         if let Some(audio_data) = audio_data {
             let mut count = 0;
             // Fill the array by repeating the sample
-            for i in 0..SAMPLE_RATE {
+            for i in 0..AUDIO_BUFFER_SIZE {
                 if count == SAMPLE_AUDIO.len() {
                     count = 0;
                 }
@@ -204,11 +226,11 @@ mod tests {
             .collect();
 
         let data_ptr = get_audio_data_array().cast_mut();
-        let audio_data = unsafe { slice_from_raw_parts_mut(data_ptr, SAMPLE_RATE).as_mut() };
+        let audio_data = unsafe { slice_from_raw_parts_mut(data_ptr, AUDIO_BUFFER_SIZE).as_mut() };
         if let Some(audio_data) = audio_data {
             let mut count = 0;
             // Fill the array by repeating the sample
-            for i in 0..SAMPLE_RATE {
+            for i in 0..AUDIO_BUFFER_SIZE {
                 if count == samples.len() {
                     count = 0;
                 }
@@ -234,7 +256,7 @@ mod tests {
         let data_ptr = get_audio_data_array().cast_mut();
         // let audio_data = unsafe { Vec::from_raw_parts(data_ptr, SAMPLE_RATE, SAMPLE_RATE) };
         let audio_data =
-            unsafe { slice_from_raw_parts_mut(data_ptr, SAMPLE_RATE).as_ref() }.unwrap();
+            unsafe { slice_from_raw_parts_mut(data_ptr, AUDIO_BUFFER_SIZE).as_ref() }.unwrap();
         assert!(audio_data[0..SAMPLE_AUDIO.len()] == SAMPLE_AUDIO);
 
         reset_audio_data_array();
@@ -249,7 +271,7 @@ mod tests {
 
             let data_ptr = get_audio_data_array().cast_mut();
             let audio_data =
-                unsafe { slice_from_raw_parts_mut(data_ptr, SAMPLE_RATE).as_ref() }.unwrap();
+                unsafe { slice_from_raw_parts_mut(data_ptr, AUDIO_BUFFER_SIZE).as_ref() }.unwrap();
             assert!(audio_data[0..SAMPLE_AUDIO.len()] == SAMPLE_AUDIO);
         }
 
@@ -258,7 +280,7 @@ mod tests {
         {
             let data_ptr = get_audio_data_array().cast_mut();
             let audio_data =
-                unsafe { slice_from_raw_parts_mut(data_ptr, SAMPLE_RATE).as_ref() }.unwrap();
+                unsafe { slice_from_raw_parts_mut(data_ptr, AUDIO_BUFFER_SIZE).as_ref() }.unwrap();
             assert!(audio_data.iter().all(|v| *v == 0.0));
         }
     }

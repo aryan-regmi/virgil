@@ -33,7 +33,7 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  final SpeechRecognition _speech = SpeechRecognition();
+  final SpeechRecognition _speech = SpeechRecognition(wakeWords: ['Wake']);
 
   @override
   void initState() {

@@ -30,6 +30,12 @@ typedef _TranscribeNativeFn = Pointer<Utf8> Function();
 
 typedef _GetAudioDataArrayNativeFn = Pointer<Float> Function();
 
+typedef _SetAudioDataNativeFn = Void Function(Int, Float);
+typedef _SetAudioDataFn = void Function(int, double);
+
+typedef _SetLoggerNativeFn = Void Function();
+typedef _SetLoggerFn = void Function();
+
 // =========================================
 
 /// Copy file from assets into application's documents directory.
@@ -86,6 +92,11 @@ class SpeechRecognition {
 
   /// Initalizes the speech recognition module.
   Future<void> _init() async {
+    // Setup Rust logger
+    final setLogger = nativeLib
+        .lookupFunction<_SetLoggerNativeFn, _SetLoggerFn>('set_logger');
+    setLogger();
+
     // Download Whisper model
     var modelManager = await _WhisperModelManager.init();
     _modelPath = modelManager.modelPath;
@@ -156,13 +167,12 @@ class SpeechRecognition {
   /// Converts raw audio data to text by running speech recognition.
   Future<String> _transcribe(Float32List audioData) async {
     // Copy audio data
-    final getAudioDataArray = nativeLib
-        .lookupFunction<_GetAudioDataArrayNativeFn, _GetAudioDataArrayNativeFn>(
-          'get_audio_data_array',
+    final setAudioData = nativeLib
+        .lookupFunction<_SetAudioDataNativeFn, _SetAudioDataFn>(
+          'set_audio_data',
         );
-    var audioDataArray = getAudioDataArray() as Pointer<Pointer<Float>>;
     for (var i = 0; i < audioData.length; i++) {
-      audioDataArray[i].value = audioData[i];
+      setAudioData(i, audioData[i]);
     }
 
     // Call Rust function
@@ -181,13 +191,12 @@ class SpeechRecognition {
     var wakeWords = _wakeWords.join("\n");
 
     // Copy audio data
-    final getAudioDataArray = nativeLib
-        .lookupFunction<_GetAudioDataArrayNativeFn, _GetAudioDataArrayNativeFn>(
-          'get_audio_data_array',
+    final setAudioData = nativeLib
+        .lookupFunction<_SetAudioDataNativeFn, _SetAudioDataFn>(
+          'set_audio_data',
         );
-    var audioDataArray = getAudioDataArray() as Pointer<Pointer<Float>>;
     for (var i = 0; i < audioData.length; i++) {
-      audioDataArray[i].value = audioData[i];
+      setAudioData(i, audioData[i]);
     }
 
     // Call Rust function
