@@ -46,17 +46,8 @@ class _MyHomePageState extends State<MyHomePage> {
   @override
   Widget build(BuildContext context) {
     final sendButton = ElevatedButton(
-      onPressed: () async => await sendStringToRust('Hello from flutter!'),
+      onPressed: () async => await sendModelPathToRust('some/path'),
       child: Text('Send'),
-    );
-    final getButton = ElevatedButton(
-      onPressed: () async {
-        final text = await getStringFromRust();
-        setState(() {
-          _text = text;
-        });
-      },
-      child: Text('Get'),
     );
 
     return Scaffold(
@@ -67,11 +58,7 @@ class _MyHomePageState extends State<MyHomePage> {
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            sendButton,
-            getButton,
-            Text(_text ?? 'Nothing received'),
-          ],
+          children: <Widget>[sendButton],
         ),
       ),
     );
