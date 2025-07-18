@@ -85,8 +85,14 @@ pub fn detect_wake_words() -> bool {
 
 /// Transcribes the audio data.
 #[unsafe(no_mangle)]
-pub fn transcribe() -> *const u8 {
+pub fn transcribe(out_len: *mut u64) -> *const u8 {
+    if out_len.is_null() {
+        return std::ptr::null();
+    }
     let mut transcript = String::with_capacity(1024);
+    unsafe {
+        *out_len = transcript.len() as u64;
+    }
     let ptr = transcript.as_mut_ptr();
     std::mem::forget(transcript);
     ptr

@@ -22,6 +22,14 @@ typedef _UpdateAudioDataFn = void Function(Pointer<Float>, int);
 typedef _DetectWakeWordNativeFn = Bool Function();
 typedef _DetectWakeWordFn = bool Function();
 
+// pub fn transcribe(out_len: *mut u64) -> *const u8
+typedef _TranscribeNativeFn = Pointer<Uint8> Function(Pointer<Uint64>);
+typedef _TranscribeFn = _TranscribeNativeFn;
+
+// pub fn free_transcript(ptr: *mut u8, len: u64)
+typedef _FreeTranscriptNativeFn = Void Function(Pointer<Uint8>, Uint64);
+typedef _FreeTranscriptFn = void Function(Pointer<Uint8>, int);
+
 // ==================================================================
 // Function Bindings
 // ==================================================================
@@ -52,4 +60,23 @@ final updateAudioData = _lib
 final wakeWordDetected = _lib
     .lookupFunction<_DetectWakeWordNativeFn, _DetectWakeWordFn>(
       'detect_wake_words',
+    );
+
+/// Transcribes the audio data into text.
+///
+/// @param out_len The length of the returned transcription.
+///
+/// @returns The transcription.
+///
+/// #Note
+/// * This should only be called **after** [updateAudioData] has been called.
+/// * [freeTranscript] must be called on the pointer returned by this function.
+final transcribe = _lib.lookupFunction<_TranscribeNativeFn, _TranscribeFn>(
+  'transcribe',
+);
+
+/// Frees the transcript returned by the [transcribe] function.
+final freeTranscript = _lib
+    .lookupFunction<_FreeTranscriptNativeFn, _FreeTranscriptFn>(
+      'free_transcript',
     );

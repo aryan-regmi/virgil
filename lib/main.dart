@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:virgil/messages.dart';
 import 'package:virgil/model_manager.dart';
+import 'package:virgil/speech_recognition.dart';
 
 void main() {
   runApp(const MyApp());
@@ -32,25 +33,33 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  late ModelManager _manager;
+  late SpeechRecognition _speech;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      _manager = await ModelManager.init();
-    });
+    _speech = SpeechRecognition();
+  }
+
+  @override
+  void dispose() {
+    _speech.closeListener();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final sendButton = ElevatedButton(
-      onPressed: () async {
-        if (_manager.modelPath != null) {
-          await sendModelPathAndLoadModel(_manager.modelPath!);
-        }
-      },
-      child: Text('Send'),
+    final listenButton = ElevatedButton(
+      onPressed: _speech.isListening
+          ? null
+          : () async => await _speech.startListening(),
+      child: Text('Listen'),
+    );
+    final pauseButton = ElevatedButton(
+      onPressed: _speech.isListening
+          ? () async => await _speech.pauseListening()
+          : null,
+      child: Text('Pause'),
     );
 
     return Scaffold(
@@ -61,7 +70,7 @@ class _MyHomePageState extends State<MyHomePage> {
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[sendButton],
+          children: <Widget>[listenButton, pauseButton],
         ),
       ),
     );

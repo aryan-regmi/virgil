@@ -1,5 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:ffi';
 
+import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_sound/flutter_sound.dart';
 import 'package:logger/web.dart';
@@ -12,12 +15,9 @@ final _logger = Logger();
 
 /// Runs speech recognition on microphone input and processes the correrponding commands.
 class SpeechRecognition {
-  SpeechRecognition({
-    int sampleRate = 44_100,
-    int numChannels = 1,
-    List<String>? wakeWords,
-  }) : _sampleRate = sampleRate,
-       _numChannels = numChannels {
+  SpeechRecognition({int sampleRate = 44_100, int numChannels = 1})
+    : _sampleRate = sampleRate,
+      _numChannels = numChannels {
     _init();
   }
 
@@ -67,8 +67,8 @@ class SpeechRecognition {
         // Process commands only if wake word is detected
         if (wakeWordDetected()) {
           _logger.i('Wake word detected');
-          //   var commands = await _transcribe(channelAudio);
-          //   await _processCommands(commands);
+          var commands = await _transcribe();
+          await _processCommands(commands);
         }
       }
     });
@@ -101,5 +101,27 @@ class SpeechRecognition {
       await _listener.stopRecorder();
       await _listener.closeRecorder();
     }
+  }
+
+  /// Converts raw microphone audio to text.
+  Future<String> _transcribe() async {
+    final lenPtr = calloc<Uint64>();
+    final dataPtr = transcribe(lenPtr);
+    final length = lenPtr.value;
+    calloc.free(lenPtr);
+
+    final bytes = dataPtr.asTypedList(length);
+    final text = utf8.decode(bytes);
+    freeTranscript(dataPtr, length);
+
+    return text;
+  }
+
+  // TODO: Move to another class/outside of this?
+  //
+  /// Processes the transcribe commands.
+  Future<void> _processCommands(String commands) async {
+    _logger.i('Command received: $commands');
+    // FIXME: Finish impl!
   }
 }
