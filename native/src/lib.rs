@@ -1,7 +1,7 @@
 use std::{
     ffi,
     ptr::slice_from_raw_parts,
-    sync::{LazyLock, Mutex, MutexGuard},
+    sync::{LazyLock, Mutex},
 };
 
 use whisper_rs::{
@@ -61,7 +61,7 @@ pub fn update_audio_data(audio_data: *const ffi::c_float, len: u64) {
 /// Checks if any wake words are present in the provided audio data.
 #[unsafe(no_mangle)]
 pub fn detect_wake_words() -> bool {
-    let model = MODEL.lock().unwrap();
+    let mut model = MODEL.lock().unwrap();
     if let Some(audio_data) = &model.audio_data {
         // Run the model
         let mut transcript = String::with_capacity(256);
@@ -71,10 +71,18 @@ pub fn detect_wake_words() -> bool {
         let lowered = transcript.to_lowercase();
         for wake_word in WAKE_WORDS {
             let idx = lowered.find(&wake_word.to_lowercase());
-            if let Some(idx) = idx {
+            if let Some(_idx) = idx {
                 // Remove the wake word from the transcript
-                transcript.drain(idx..wake_word.len());
-                update_transcript(model, &transcript);
+                // transcript.drain(idx..wake_word.len());
+
+                // Update the model's transcript
+                if let Some(model_transcript) = &mut model.transcript {
+                    model_transcript.clear();
+                    model_transcript.push_str(&transcript);
+                } else {
+                    model.transcript = Some(transcript.into())
+                }
+
                 return true;
             }
         }
@@ -114,16 +122,6 @@ pub fn free_transcript(ptr: *mut u8, len: u64) {
 //
 /// The wake words recognized by the app.
 const WAKE_WORDS: [&str; 1] = ["Wake"];
-
-/// Updates the model's transcript.
-fn update_transcript(mut model: MutexGuard<Model>, new_transcript: &str) {
-    if let Some(transcript) = &mut model.transcript {
-        transcript.clear();
-        transcript.push_str(new_transcript);
-    } else {
-        model.transcript = Some(new_transcript.into())
-    }
-}
 
 /// Runs the model
 fn run_model(audio_data: &[f32], transcript: &mut String) {

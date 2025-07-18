@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:virgil/messages.dart';
 import 'package:virgil/model_manager.dart';
@@ -33,12 +35,14 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  late SpeechRecognition _speech;
+  final SpeechRecognition _speech = SpeechRecognition();
 
   @override
   void initState() {
     super.initState();
-    _speech = SpeechRecognition();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Timer.periodic(Duration(seconds: 1), (_) => setState(() {}));
+    });
   }
 
   @override
