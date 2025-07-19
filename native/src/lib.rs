@@ -10,6 +10,18 @@ use whisper_rs::{
 
 // FIXME: Forward errors to Flutter!
 
+#[derive(Default)]
+struct RustError {
+    errors: Vec<String>,
+}
+
+static ERRORS: LazyLock<Mutex<RustError>> = LazyLock::new(|| Mutex::new(RustError::default()));
+
+fn add_error(error: String) {
+    let mut errors = ERRORS.lock().unwrap();
+    errors.errors.push(error);
+}
+
 /// Represents the library's state.
 #[derive(Default)]
 struct Model {
@@ -25,16 +37,31 @@ static MODEL: LazyLock<Mutex<Model>> = LazyLock::new(|| Mutex::new(Model::defaul
 #[unsafe(no_mangle)]
 pub fn load_model(path: *const u8, len: u64) {
     if path.is_null() || len == 0 {
+        add_error(format!("Invalid path: ({:?}, len = {})", path, len));
         return;
     }
     let len = len as usize;
-    let slice = unsafe { slice_from_raw_parts(path, len).as_ref().unwrap() };
-    let model_path = String::from_utf8(slice.into()).unwrap();
+    let slice = unsafe {
+        slice_from_raw_parts(path, len)
+            .as_ref()
+            .ok_or_else(|| {
+                add_error("Unable to build slice from path pointer".into());
+                return;
+            })
+            .unwrap()
+    };
+    let model_path = String::from_utf8(slice.into())
+        .map_err(|e| add_error(format!("Failed to build path into String: {e}")))
+        .unwrap();
 
     // Load model
-    let ctx =
-        WhisperContext::new_with_params(&model_path, WhisperContextParameters::default()).unwrap();
-    let state = ctx.create_state().unwrap();
+    let ctx = WhisperContext::new_with_params(&model_path, WhisperContextParameters::default())
+        .map_err(|e| add_error(format!("Unable to load model: {e}")))
+        .unwrap();
+    let state = ctx
+        .create_state()
+        .map_err(|e| add_error(format!("Unable to create state: {e}")))
+        .unwrap();
     let mut model = MODEL.lock().unwrap();
     model.state = Some(state);
 }
@@ -43,10 +70,23 @@ pub fn load_model(path: *const u8, len: u64) {
 #[unsafe(no_mangle)]
 pub fn update_audio_data(audio_data: *const ffi::c_float, len: u64) {
     if audio_data.is_null() || len == 0 {
+        add_error(format!(
+            "Invalid data: (audio_data = {audio_data:?}, len = {len})",
+        ));
         return;
     }
     let len = len as usize;
-    let audio_data = unsafe { slice_from_raw_parts(audio_data, len).as_ref().unwrap() };
+    let audio_data = unsafe {
+        slice_from_raw_parts(audio_data, len)
+            .as_ref()
+            .ok_or_else(|| {
+                add_error(format!(
+                    "Unable to create slice from data: (audio_data = {audio_data:?}, len = {len})"
+                ));
+                return;
+            })
+            .unwrap()
+    };
 
     // Update data
     let mut model = MODEL.lock().unwrap();
