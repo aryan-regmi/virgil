@@ -53,6 +53,7 @@ impl From<u8> for MessageType {
         }
     }
 }
+
 #[derive(Debug, Encode, Decode)]
 pub struct LoadModel(String);
 impl Message for LoadModel {}
@@ -73,6 +74,14 @@ impl Message for Transcribe {}
 //                              Responses
 // ==================================================================
 
+/// The various response types.
+#[derive(Debug, Encode, Decode)]
+pub enum ResponseType {
+    Text,
+    WakeWord,
+    Error,
+}
+
 #[derive(Debug, Encode, Decode)]
 pub struct TextResponse(String);
 
@@ -82,12 +91,10 @@ pub struct WakeWordResponse(WakeWordDetection);
 #[derive(Debug, Encode, Decode)]
 pub struct ErrorResponse(String);
 
-/// The various response types.
 #[derive(Debug, Encode, Decode)]
-pub enum ResponseType {
-    Text,
-    WakeWord,
-    Error,
+pub struct Response<T> {
+    kind: ResponseType,
+    value: T,
 }
 
 // ==================================================================
@@ -140,7 +147,10 @@ pub fn send_message_to_rust(
                 .unwrap();
 
             // Return serialized response
-            let response = TextResponse(format!("Model path set to: {model_path}"));
+            let response = Response {
+                kind: ResponseType::Text,
+                value: TextResponse(format!("Model path set to: {model_path}")),
+            };
             return serialize(response, resp_len)
                 .map_err(|e| return rust_error(e, resp_len))
                 .unwrap();
@@ -154,10 +164,13 @@ pub fn send_message_to_rust(
                 .unwrap();
 
             // Return serialized response
-            let response = TextResponse(format!(
-                "Audio data updated with {} samples",
-                new_data.len()
-            ));
+            let response = Response {
+                kind: ResponseType::Text,
+                value: TextResponse(format!(
+                    "Audio data updated with {} samples",
+                    new_data.len()
+                )),
+            };
             return serialize(response, resp_len)
                 .map_err(|e| return rust_error(e, resp_len))
                 .unwrap();
@@ -170,8 +183,10 @@ pub fn send_message_to_rust(
                 .map_err(|e| return rust_error(e, resp_len))
                 .unwrap();
 
-            // Return serialized response
-            let response = WakeWordResponse(detection);
+            let response = Response {
+                kind: ResponseType::WakeWord,
+                value: WakeWordResponse(detection),
+            };
             return serialize(response, resp_len)
                 .map_err(|e| return rust_error(e, resp_len))
                 .unwrap();
@@ -182,8 +197,10 @@ pub fn send_message_to_rust(
                 .map_err(|e| return rust_error(e, resp_len))
                 .unwrap();
 
-            // Return serialized response
-            let response = TextResponse(transcript);
+            let response = Response {
+                kind: ResponseType::Text,
+                value: TextResponse(transcript),
+            };
             return serialize(response, resp_len)
                 .map_err(|e| return rust_error(e, resp_len))
                 .unwrap();
@@ -244,7 +261,10 @@ fn deserialize<T: Decode<()>>(ptr: *const ffi::c_void, len: usize) -> Result<T, 
 
 /// Returns an error `Response`.
 fn rust_error(details: String, resp_len: *mut usize) -> *mut ffi::c_void {
-    let error = ErrorResponse(details);
+    let error = Response {
+        kind: ResponseType::Error,
+        value: ErrorResponse(details),
+    };
     serialize(error, resp_len).unwrap()
 }
 
