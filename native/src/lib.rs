@@ -1,3 +1,6 @@
+mod messages;
+mod state;
+
 use std::{
     ffi,
     ptr::slice_from_raw_parts,
@@ -35,7 +38,7 @@ static MODEL: LazyLock<Mutex<Model>> = LazyLock::new(|| Mutex::new(Model::defaul
 
 /// Loads the Whisper model from the given path.
 #[unsafe(no_mangle)]
-pub fn load_model(path: *const u8, len: u64) {
+pub fn load_model_(path: *const u8, len: u64) {
     if path.is_null() || len == 0 {
         add_error(format!("Invalid path: ({:?}, len = {})", path, len));
         return;
@@ -68,7 +71,7 @@ pub fn load_model(path: *const u8, len: u64) {
 
 /// Updates the audio data to be transcribed.
 #[unsafe(no_mangle)]
-pub fn update_audio_data(audio_data: *const ffi::c_float, len: u64) {
+pub fn update_audio_data_(audio_data: *const ffi::c_float, len: u64) {
     if audio_data.is_null() || len == 0 {
         add_error(format!(
             "Invalid data: (audio_data = {audio_data:?}, len = {len})",
@@ -100,12 +103,12 @@ pub fn update_audio_data(audio_data: *const ffi::c_float, len: u64) {
 
 /// Checks if any wake words are present in the provided audio data.
 #[unsafe(no_mangle)]
-pub fn detect_wake_words() -> bool {
+pub fn detect_wake_words_() -> bool {
     let mut model = MODEL.lock().unwrap();
     if let Some(audio_data) = &model.audio_data {
         // Run the model
         let mut transcript = String::with_capacity(256);
-        run_model(audio_data, &mut transcript);
+        run_model_(audio_data, &mut transcript);
 
         // Check transcript for wake words
         let lowered = transcript.to_lowercase();
@@ -133,7 +136,7 @@ pub fn detect_wake_words() -> bool {
 
 /// Transcribes the audio data.
 #[unsafe(no_mangle)]
-pub fn transcribe(out_len: *mut u64) -> *const u8 {
+pub fn transcribe_(out_len: *mut u64) -> *const u8 {
     if out_len.is_null() {
         return std::ptr::null();
     }
@@ -148,7 +151,7 @@ pub fn transcribe(out_len: *mut u64) -> *const u8 {
 
 /// Frees the memory used by Rust's transcript.
 #[unsafe(no_mangle)]
-pub fn free_transcript(ptr: *mut u8, len: u64) {
+pub fn free_transcript_(ptr: *mut u8, len: u64) {
     if ptr.is_null() || len == 0 {
         return;
     }
@@ -164,7 +167,7 @@ pub fn free_transcript(ptr: *mut u8, len: u64) {
 const WAKE_WORDS: [&str; 1] = ["Wake"];
 
 /// Runs the model
-fn run_model(audio_data: &[f32], transcript: &mut String) {
+fn run_model_(audio_data: &[f32], transcript: &mut String) {
     let mut model = MODEL.lock().unwrap();
     if let Some(state) = &mut model.state {
         let params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
