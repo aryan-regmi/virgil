@@ -34,7 +34,6 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  // final SpeechRecognition _speech = SpeechRecognition();
   String? _text;
 
   @override
@@ -47,24 +46,11 @@ class _MyHomePageState extends State<MyHomePage> {
 
   @override
   void dispose() {
-    // _speech.closeListener();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    // final listenButton = ElevatedButton(
-    //   onPressed: _speech.isListening
-    //       ? null
-    //       : () async => await _speech.startListening(),
-    //   child: Text('Listen'),
-    // );
-    // final pauseButton = ElevatedButton(
-    //   onPressed: _speech.isListening
-    //       ? () async => await _speech.pauseListening()
-    //       : null,
-    //   child: Text('Pause'),
-    // );
     final sendButton = ElevatedButton(
       onPressed: () async {
         final response = await sendMessage(

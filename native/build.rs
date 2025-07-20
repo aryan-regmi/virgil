@@ -7,6 +7,8 @@ fn main() {
     if env::var("CARGO_CFG_TARGET_OS").unwrap() == "android" {
         android();
     }
+
+    println!("{}", env::var("CARGO_CFG_TARGET_OS").unwrap());
 }
 
 fn android() {
@@ -20,18 +22,4 @@ fn android() {
             .join("libc++_shared.so");
         std::fs::copy(lib_path, output_path).unwrap();
     }
-
-    // if let Ok(output_path) = env::var("VIRGIL_OUT_DIR") {
-    //     let sysroot_libs_path = PathBuf::from(env::var_os("CARGO_NDK_SYSROOT_LIBS_PATH").unwrap());
-    //     let lib_path = sysroot_libs_path.join("libc++_shared.so");
-    //     let output_path = Path::new(&env::var("CARGO_MANIFEST_DIR").unwrap())
-    //         .join("target")
-    //         .join(output_path)
-    //         .join("release")
-    //         .join("libc++_shared.so");
-    //     std::fs::copy(&lib_path, &output_path).expect(&format!(
-    //         "Lib path: {:?}\nOut path: {:?}",
-    //         lib_path, output_path
-    //     ));
-    // }
 }

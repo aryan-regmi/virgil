@@ -31,7 +31,6 @@ RustResponse _sendMessage<Message extends BincodeCodable>(Map args) {
   final Message message = args["message"];
 
   // Encode message
-  _logger.i('Encoding message...');
   late final int msgType;
   late final Uint8List encodedMessage;
   if (messageType != MessageType.transcribe) {
@@ -42,15 +41,13 @@ RustResponse _sendMessage<Message extends BincodeCodable>(Map args) {
 
   // Allocate memory to send to Rust
   final msgLen = encodedMessage.length;
-  _logger.w('Message Length: $msgLen');
-  final msgPtr = malloc.allocate<Uint8>(msgLen).cast<Void>();
-  final responseTypePtr = malloc.allocate<Uint8>(sizeOf<Uint8>());
-  final responseLenPtr = malloc.allocate<UintPtr>(sizeOf<UintPtr>());
+  final msgPtr = calloc.allocate<Void>(msgLen);
+  final responseTypePtr = calloc.allocate<Uint8>(sizeOf<Uint8>());
+  final responseLenPtr = calloc.allocate<UintPtr>(sizeOf<UintPtr>());
   final dartAllocs = [msgPtr, responseTypePtr, responseLenPtr];
-  _logger.i('Allocated memory to send to Rust');
+  _logger.i('Allocated memory for Rust methods');
 
   // Send to Rust
-  _logger.i('Sending message to rust...');
   final responsePtr = sendMessageToRustNative(
     msgType,
     msgPtr,
@@ -58,37 +55,23 @@ RustResponse _sendMessage<Message extends BincodeCodable>(Map args) {
     responseTypePtr,
     responseLenPtr,
   );
-  _logger.i('Message sent');
   final nativeAllocs = {(responsePtr, responseLenPtr.value)};
+  _logger.i('Message sent to Rust');
+
+  // Validate response
+  if (responsePtr.address == nullptr.address) {
+    _logger.e('Response from Rust was NULL');
+    return ErrorResponse('Invalid response from Rust');
+  }
 
   // Decode and return response
   _logger.i('Decoding response...');
   final responseBytesPtr = responsePtr.cast<Uint8>();
   final responseBytes = responseBytesPtr.asTypedList(responseLenPtr.value);
   final responseType = ResponseType.values[responseTypePtr.value];
-  switch (responseType) {
-    case ResponseType.text:
-      final response = BincodeReader.decode(
-        responseBytes,
-        TextResponse.empty(),
-      );
-      _freeAllocs(dartAllocs: dartAllocs, nativeAllocs: nativeAllocs);
-      return response;
-    case ResponseType.wakeWord:
-      final response = BincodeReader.decode(
-        responseBytes,
-        WakeWordResponse.empty(),
-      );
-      _freeAllocs(dartAllocs: dartAllocs, nativeAllocs: nativeAllocs);
-      return response;
-    case ResponseType.error:
-      final response = BincodeReader.decode(
-        responseBytes,
-        ErrorResponse.empty(),
-      );
-      _freeAllocs(dartAllocs: dartAllocs, nativeAllocs: nativeAllocs);
-      return response;
-  }
+  final response = _decodeResponse(responseType, responseBytes);
+  _freeAllocs(dartAllocs: dartAllocs, nativeAllocs: nativeAllocs);
+  return response;
 }
 
 /// Frees the defined allocations.
@@ -104,5 +87,23 @@ void _freeAllocs({
   _logger.i('Freeing native allocations');
   for (var info in nativeAllocs) {
     freeResponseNative(info.$1, info.$2);
+  }
+}
+
+/// Decodes the response into the correct types.
+RustResponse _decodeResponse(ResponseType responseType, Uint8List bytes) {
+  switch (responseType) {
+    case ResponseType.text:
+      final response = BincodeReader.decode(bytes, TextResponse.empty());
+      _logger.i('Decoded response: $response');
+      return response;
+    case ResponseType.wakeWord:
+      final response = BincodeReader.decode(bytes, WakeWordResponse.empty());
+      _logger.i('Decoded response: $response');
+      return response;
+    case ResponseType.error:
+      final response = BincodeReader.decode(bytes, ErrorResponse.empty());
+      _logger.i('Decoded response: $response');
+      return response;
   }
 }

@@ -128,6 +128,11 @@ pub fn send_message_to_rust(
     resp_type: *mut u8,
     resp_len: *mut usize,
 ) -> *mut ffi::c_void {
+    // Validate inputs
+    if msg_ptr.is_null() || resp_type.is_null() || resp_len.is_null() {
+        return std::ptr::null_mut();
+    }
+
     // Decode message
     let kind: MessageType = msg_type.into();
     let message = match kind {
@@ -171,7 +176,7 @@ pub fn send_message_to_rust(
             // Return serialized response
             unsafe { *resp_type = ResponseType::Text.into() };
             let response = TextResponse(format!("Model path set to: {model_path}"));
-            return serialize(response, resp_len)
+            return serialize(response, msg_len, resp_len)
                 .map_err(|e| return rust_error(e, resp_type, resp_len))
                 .unwrap();
         }
@@ -189,7 +194,7 @@ pub fn send_message_to_rust(
                 "Audio data updated with {} samples",
                 new_data.len()
             ));
-            return serialize(response, resp_len)
+            return serialize(response, msg_len, resp_len)
                 .map_err(|e| return rust_error(e, resp_type, resp_len))
                 .unwrap();
         }
@@ -204,7 +209,7 @@ pub fn send_message_to_rust(
             // Return serialized response
             unsafe { *resp_type = ResponseType::WakeWord.into() };
             let response = WakeWordResponse(detection);
-            return serialize(response, resp_len)
+            return serialize(response, msg_len, resp_len)
                 .map_err(|e| return rust_error(e, resp_type, resp_len))
                 .unwrap();
         }
@@ -217,7 +222,7 @@ pub fn send_message_to_rust(
             // Return serialized response
             unsafe { *resp_type = ResponseType::Text.into() };
             let response = TextResponse(transcript);
-            return serialize(response, resp_len)
+            return serialize(response, msg_len, resp_len)
                 .map_err(|e| return rust_error(e, resp_type, resp_len))
                 .unwrap();
         }
@@ -225,8 +230,8 @@ pub fn send_message_to_rust(
             // Return serialized response
             let message = message.concrete::<DebugMessage>();
             unsafe { *resp_type = ResponseType::Text.into() };
-            let response = TextResponse(message.0.clone());
-            return serialize(response, resp_len)
+            let response = TextResponse(format!("Recieved: {} from Dart", message.0));
+            return serialize(response, msg_len, resp_len)
                 .map_err(|e| return rust_error(e, resp_type, resp_len))
                 .unwrap();
         }
@@ -253,8 +258,12 @@ pub fn free_response(ptr: *const ffi::c_void, len: usize) {
 ///
 /// # Note
 /// The callier must free the the returned pointer with [free_response].
-fn serialize<T: Encode>(value: T, len_ptr: *mut usize) -> Result<*mut ffi::c_void, String> {
-    let mut bytes = Vec::<u8>::with_capacity(size_of_val(&value));
+fn serialize<T: Encode>(
+    value: T,
+    value_len: usize,
+    len_ptr: *mut usize,
+) -> Result<*mut ffi::c_void, String> {
+    let mut bytes = vec![0; value_len];
     let written = encode_into_slice(
         value,
         bytes.as_mut_slice(),
@@ -262,7 +271,9 @@ fn serialize<T: Encode>(value: T, len_ptr: *mut usize) -> Result<*mut ffi::c_voi
     )
     .map_err(|e| e.to_string())?;
     let response_ptr: *mut ffi::c_void = Box::into_raw(bytes.into_boxed_slice()).cast();
-    unsafe { *len_ptr = written };
+    if !len_ptr.is_null() {
+        unsafe { *len_ptr = written };
+    }
     Ok(response_ptr)
 }
 
@@ -286,9 +297,13 @@ fn deserialize<T: Decode<()>>(ptr: *const ffi::c_void, len: usize) -> Result<T, 
 
 /// Returns an error `Response`.
 fn rust_error(details: String, resp_type: *mut u8, resp_len: *mut usize) -> *mut ffi::c_void {
+    if resp_type.is_null() || resp_len.is_null() {
+        return std::ptr::null_mut();
+    }
     unsafe { *resp_type = ResponseType::Error.into() };
     let error = ErrorResponse(details);
-    serialize(error, resp_len).unwrap()
+    let size = size_of_val(&error);
+    serialize(error, size, resp_len).unwrap()
 }
 
 /// Allows for convenient downcasting.

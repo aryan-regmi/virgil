@@ -8,9 +8,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 bincode = { version = "2.0.1" }
-tracing = "0.1.41"
-tracing-subscriber = "0.3.19"
 whisper-rs = { version = "0.14.3", features = ["tracing_backend"] }
 
-[dev-dependencies]
-hound = "3.5.1"
+[profile.release]
+debug = true
