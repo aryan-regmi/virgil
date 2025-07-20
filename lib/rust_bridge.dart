@@ -6,7 +6,12 @@ import 'dart:ffi';
 import 'package:d_bincode/d_bincode.dart';
 import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart';
+import 'package:logger/logger.dart';
 import 'package:virgil/native.dart';
+
+final _logger = Logger();
+
+// FIXME: Send address to pointers between isolates!
 
 // TODO: Use writer/reader pools!
 
@@ -16,7 +21,8 @@ Future<RustResponse> sendMessage<Message extends BincodeCodable>({
   required Message message,
 }) async {
   var args = {"messageType": messageType, "message": message};
-  return compute(_sendMessage, args);
+  return _sendMessage(args);
+  // return compute(_sendMessage, args);
 }
 
 /// Sends the given message to Rust, and returns its response.
@@ -25,21 +31,26 @@ RustResponse _sendMessage<Message extends BincodeCodable>(Map args) {
   final Message message = args["message"];
 
   // Encode message
+  _logger.i('Encoding message...');
   late final int msgType;
   late final Uint8List encodedMessage;
   if (messageType != MessageType.transcribe) {
     msgType = messageType.index;
     encodedMessage = BincodeWriter.encode(message);
   }
+  _logger.i('Message encoded');
 
   // Allocate memory to send to Rust
   final msgLen = encodedMessage.length;
-  final msgPtr = malloc<Uint8>(msgLen).cast<Void>();
-  final responseTypePtr = malloc<Uint8>();
-  final responseLenPtr = malloc<UintPtr>();
+  _logger.w('Message Length: $msgLen');
+  final msgPtr = malloc.allocate<Uint8>(msgLen).cast<Void>();
+  final responseTypePtr = malloc.allocate<Uint8>(sizeOf<Uint8>());
+  final responseLenPtr = malloc.allocate<UintPtr>(sizeOf<UintPtr>());
   final dartAllocs = [msgPtr, responseTypePtr, responseLenPtr];
+  _logger.i('Allocated memory to send to Rust');
 
   // Send to Rust
+  _logger.i('Sending message to rust...');
   final responsePtr = sendMessageToRustNative(
     msgType,
     msgPtr,
@@ -47,9 +58,11 @@ RustResponse _sendMessage<Message extends BincodeCodable>(Map args) {
     responseTypePtr,
     responseLenPtr,
   );
+  _logger.i('Message sent');
   final nativeAllocs = {(responsePtr, responseLenPtr.value)};
 
   // Decode and return response
+  _logger.i('Decoding response...');
   final responseBytesPtr = responsePtr.cast<Uint8>();
   final responseBytes = responseBytesPtr.asTypedList(responseLenPtr.value);
   final responseType = ResponseType.values[responseTypePtr.value];
@@ -83,9 +96,12 @@ void _freeAllocs({
   required List<Pointer> dartAllocs,
   required Set<(Pointer<Void>, int)> nativeAllocs,
 }) {
+  _logger.i('Freeing Dart allocations');
   for (var ptr in dartAllocs) {
     malloc.free(ptr);
   }
+
+  _logger.i('Freeing native allocations');
   for (var info in nativeAllocs) {
     freeResponseNative(info.$1, info.$2);
   }
