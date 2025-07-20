@@ -95,15 +95,17 @@ RustResponse _decodeResponse(ResponseType responseType, Uint8List bytes) {
   switch (responseType) {
     case ResponseType.text:
       final response = BincodeReader.decode(bytes, TextResponse.empty());
-      _logger.i('Decoded response: $response');
+      _logger.i('Decoded response: TextResponse(${response.text})');
       return response;
     case ResponseType.wakeWord:
       final response = BincodeReader.decode(bytes, WakeWordResponse.empty());
-      _logger.i('Decoded response: $response');
+      _logger.i(
+        'Decoded response: WakeWordResponse {\n\tdetected: ${response.detection.detected},\n\tstartIdx: ${response.detection.startIdx},\n\tendIdx: ${response.detection.endIdx} }',
+      );
       return response;
     case ResponseType.error:
       final response = BincodeReader.decode(bytes, ErrorResponse.empty());
-      _logger.i('Decoded response: $response');
+      _logger.i('Decoded response: ErrorResponse(${response.text})');
       return response;
   }
 }

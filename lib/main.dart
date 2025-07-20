@@ -57,15 +57,11 @@ class _MyHomePageState extends State<MyHomePage> {
           messageType: MessageType.debug,
           message: DebugMessage(message: 'Hi from Flutter!'),
         );
-        switch (response.kind) {
-          case ResponseType.text:
-          case ResponseType.error:
-            setState(() {
-              _text = response.value;
-            });
-            break;
-          case ResponseType.wakeWord:
-            break;
+        if (response.kind == ResponseType.text ||
+            response.kind == ResponseType.error) {
+          setState(() {
+            _text = response.value;
+          });
         }
       },
       child: Text('Send to Rust'),
@@ -79,7 +75,10 @@ class _MyHomePageState extends State<MyHomePage> {
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[sendButton, Text(_text != null ? _text! : '')],
+          children: <Widget>[
+            sendButton,
+            _text == null ? Text('Waiting...') : Text(_text!),
+          ],
         ),
       ),
     );

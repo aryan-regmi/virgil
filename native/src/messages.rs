@@ -176,7 +176,7 @@ pub fn send_message_to_rust(
             // Return serialized response
             unsafe { *resp_type = ResponseType::Text.into() };
             let response = TextResponse(format!("Model path set to: {model_path}"));
-            return serialize(response, msg_len, resp_len)
+            return serialize(response, resp_len)
                 .map_err(|e| return rust_error(e, resp_type, resp_len))
                 .unwrap();
         }
@@ -194,7 +194,7 @@ pub fn send_message_to_rust(
                 "Audio data updated with {} samples",
                 new_data.len()
             ));
-            return serialize(response, msg_len, resp_len)
+            return serialize(response, resp_len)
                 .map_err(|e| return rust_error(e, resp_type, resp_len))
                 .unwrap();
         }
@@ -209,7 +209,7 @@ pub fn send_message_to_rust(
             // Return serialized response
             unsafe { *resp_type = ResponseType::WakeWord.into() };
             let response = WakeWordResponse(detection);
-            return serialize(response, msg_len, resp_len)
+            return serialize(response, resp_len)
                 .map_err(|e| return rust_error(e, resp_type, resp_len))
                 .unwrap();
         }
@@ -222,7 +222,7 @@ pub fn send_message_to_rust(
             // Return serialized response
             unsafe { *resp_type = ResponseType::Text.into() };
             let response = TextResponse(transcript);
-            return serialize(response, msg_len, resp_len)
+            return serialize(response, resp_len)
                 .map_err(|e| return rust_error(e, resp_type, resp_len))
                 .unwrap();
         }
@@ -231,7 +231,7 @@ pub fn send_message_to_rust(
             let message = message.concrete::<DebugMessage>();
             unsafe { *resp_type = ResponseType::Text.into() };
             let response = TextResponse(format!("Recieved: {} from Dart", message.0));
-            return serialize(response, msg_len, resp_len)
+            return serialize(response, resp_len)
                 .map_err(|e| return rust_error(e, resp_type, resp_len))
                 .unwrap();
         }
@@ -258,12 +258,9 @@ pub fn free_response(ptr: *const ffi::c_void, len: usize) {
 ///
 /// # Note
 /// The callier must free the the returned pointer with [free_response].
-fn serialize<T: Encode>(
-    value: T,
-    value_len: usize,
-    len_ptr: *mut usize,
-) -> Result<*mut ffi::c_void, String> {
-    let mut bytes = vec![0; value_len];
+fn serialize<T: Encode>(value: T, len_ptr: *mut usize) -> Result<*mut ffi::c_void, String> {
+    let value_len = size_of_val(&value);
+    let mut bytes = vec![0; value_len + size_of::<T>()];
     let written = encode_into_slice(
         value,
         bytes.as_mut_slice(),
@@ -302,8 +299,7 @@ fn rust_error(details: String, resp_type: *mut u8, resp_len: *mut usize) -> *mut
     }
     unsafe { *resp_type = ResponseType::Error.into() };
     let error = ErrorResponse(details);
-    let size = size_of_val(&error);
-    serialize(error, size, resp_len).unwrap()
+    serialize(error, resp_len).unwrap()
 }
 
 /// Allows for convenient downcasting.
