@@ -25,9 +25,7 @@ enum MessageType {
   debug,
 }
 
-abstract class DartMessage implements BincodeCodable {
-  int get lengthInBytes;
-}
+abstract class DartMessage implements BincodeCodable {}
 
 class LoadModelMessage extends DartMessage {
   LoadModelMessage({required this.modelPath});
@@ -43,9 +41,6 @@ class LoadModelMessage extends DartMessage {
   void decode(BincodeReader reader) {
     modelPath = reader.readString();
   }
-
-  @override
-  int get lengthInBytes => modelPath.length;
 }
 
 class UpdateAudioDataMessage extends DartMessage {
@@ -62,9 +57,6 @@ class UpdateAudioDataMessage extends DartMessage {
   void decode(BincodeReader reader) {
     audioData = Float32List.fromList(reader.readFloat32List());
   }
-
-  @override
-  int get lengthInBytes => audioData.lengthInBytes;
 }
 
 class DetectWakeWordsMessage extends DartMessage {
@@ -81,15 +73,6 @@ class DetectWakeWordsMessage extends DartMessage {
   void decode(BincodeReader reader) {
     wakeWords = reader.readList(reader.readString);
   }
-
-  @override
-  int get lengthInBytes {
-    var listLen = wakeWords.length;
-    for (var str in wakeWords) {
-      listLen += str.length;
-    }
-    return listLen;
-  }
 }
 
 // NOTE: This is a ZST in Rust, so no need to send it across.
@@ -99,9 +82,6 @@ class TranscribeMessage extends DartMessage {
 
   @override
   void encode(BincodeWriter writer) {}
-
-  @override
-  int get lengthInBytes => 0;
 }
 
 class DebugMessage extends DartMessage {
@@ -118,9 +98,6 @@ class DebugMessage extends DartMessage {
   void decode(BincodeReader reader) {
     message = reader.readString();
   }
-
-  @override
-  int get lengthInBytes => message.length;
 }
 
 // ==================================================================
@@ -132,12 +109,12 @@ class DebugMessage extends DartMessage {
 /// The response type sent from Rust.
 enum ResponseType { text, wakeWord, error }
 
-abstract class RustResponse<T> {
+abstract class RustResponse<T> implements BincodeCodable {
   ResponseType get kind;
   T get value;
 }
 
-class TextResponse extends RustResponse<String> implements BincodeCodable {
+class TextResponse extends RustResponse<String> {
   String text;
 
   TextResponse(this.text);
@@ -183,8 +160,7 @@ class WakeWordDetection implements BincodeCodable {
   }
 }
 
-class WakeWordResponse extends RustResponse<WakeWordDetection>
-    implements BincodeCodable {
+class WakeWordResponse extends RustResponse<WakeWordDetection> {
   WakeWordDetection detection;
 
   WakeWordResponse(this.detection);
@@ -207,7 +183,7 @@ class WakeWordResponse extends RustResponse<WakeWordDetection>
   WakeWordDetection get value => detection;
 }
 
-class ErrorResponse extends RustResponse<String> implements BincodeCodable {
+class ErrorResponse extends RustResponse<String> {
   String text;
 
   ErrorResponse(this.text);

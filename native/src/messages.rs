@@ -230,7 +230,7 @@ pub fn send_message_to_rust(
             // Return serialized response
             let message = message.concrete::<DebugMessage>();
             unsafe { *resp_type = ResponseType::Text.into() };
-            let response = TextResponse(format!("Recieved: {} from Dart", message.0));
+            let response = TextResponse(format!("Debug: '{}'", message.0));
             return serialize(response, resp_len)
                 .map_err(|e| return rust_error(e, resp_type, resp_len))
                 .unwrap();
