@@ -16,7 +16,7 @@ final _logger = Logger();
 // TODO: Use writer/reader pools!
 
 /// Sends the given message to Rust in a background isolate and returns its response.
-Future<RustResponse> sendMessage<Message extends BincodeCodable>({
+Future<RustResponse> sendMessage<Message extends DartMessage>({
   required MessageType messageType,
   required Message message,
 }) async {
@@ -26,31 +26,36 @@ Future<RustResponse> sendMessage<Message extends BincodeCodable>({
 }
 
 /// Sends the given message to Rust, and returns its response.
-RustResponse _sendMessage<Message extends BincodeCodable>(Map args) {
+RustResponse _sendMessage<Message extends DartMessage>(Map args) {
   final MessageType messageType = args["messageType"];
   final Message message = args["message"];
 
   // Encode message
-  late final int msgType;
+  late final int msgType = messageType.index;
   late final Uint8List encodedMessage;
-  if (messageType != MessageType.transcribe) {
-    msgType = messageType.index;
+  if (messageType == MessageType.transcribe) {
+    encodedMessage = Uint8List(0); // Ignore ZST messages
+  } else {
     encodedMessage = BincodeWriter.encode(message);
   }
-  _logger.i('Message encoded');
+  _logger.i('Message encoded: $message');
 
   // Allocate memory to send to Rust
   final msgLen = encodedMessage.length;
-  final msgPtr = calloc.allocate<Void>(msgLen);
+  final msgPtr = calloc.allocate<Uint8>(msgLen);
   final responseTypePtr = calloc.allocate<Uint8>(sizeOf<Uint8>());
   final responseLenPtr = calloc.allocate<UintPtr>(sizeOf<UintPtr>());
   final dartAllocs = [msgPtr, responseTypePtr, responseLenPtr];
   _logger.i('Allocated memory for Rust methods');
 
+  // Copy encoded message over
+  var msgBytes = msgPtr.asTypedList(msgLen);
+  msgBytes.setAll(0, encodedMessage);
+
   // Send to Rust
   final responsePtr = sendMessageToRustNative(
     msgType,
-    msgPtr,
+    msgPtr.cast(),
     msgLen,
     responseTypePtr,
     responseLenPtr,

@@ -25,7 +25,11 @@ enum MessageType {
   debug,
 }
 
-class LoadModelMessage implements BincodeCodable {
+abstract class DartMessage implements BincodeCodable {
+  int get lengthInBytes;
+}
+
+class LoadModelMessage extends DartMessage {
   LoadModelMessage({required this.modelPath});
 
   String modelPath;
@@ -39,9 +43,12 @@ class LoadModelMessage implements BincodeCodable {
   void decode(BincodeReader reader) {
     modelPath = reader.readString();
   }
+
+  @override
+  int get lengthInBytes => modelPath.length;
 }
 
-class UpdateAudioDataMessage implements BincodeCodable {
+class UpdateAudioDataMessage extends DartMessage {
   UpdateAudioDataMessage({required this.audioData});
 
   Float32List audioData;
@@ -55,9 +62,12 @@ class UpdateAudioDataMessage implements BincodeCodable {
   void decode(BincodeReader reader) {
     audioData = Float32List.fromList(reader.readFloat32List());
   }
+
+  @override
+  int get lengthInBytes => audioData.lengthInBytes;
 }
 
-class DetectWakeWordsMessage implements BincodeCodable {
+class DetectWakeWordsMessage extends DartMessage {
   DetectWakeWordsMessage({required this.wakeWords});
 
   List<String> wakeWords;
@@ -71,18 +81,30 @@ class DetectWakeWordsMessage implements BincodeCodable {
   void decode(BincodeReader reader) {
     wakeWords = reader.readList(reader.readString);
   }
+
+  @override
+  int get lengthInBytes {
+    var listLen = wakeWords.length;
+    for (var str in wakeWords) {
+      listLen += str.length;
+    }
+    return listLen;
+  }
 }
 
 // NOTE: This is a ZST in Rust, so no need to send it across.
-class TranscribeMessage implements BincodeCodable {
+class TranscribeMessage extends DartMessage {
   @override
   void decode(BincodeReader reader) {}
 
   @override
   void encode(BincodeWriter writer) {}
+
+  @override
+  int get lengthInBytes => 0;
 }
 
-class DebugMessage implements BincodeCodable {
+class DebugMessage extends DartMessage {
   DebugMessage({required this.message});
 
   String message;
@@ -96,6 +118,9 @@ class DebugMessage implements BincodeCodable {
   void decode(BincodeReader reader) {
     message = reader.readString();
   }
+
+  @override
+  int get lengthInBytes => message.length;
 }
 
 // ==================================================================
