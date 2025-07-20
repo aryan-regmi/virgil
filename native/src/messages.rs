@@ -15,7 +15,7 @@ use crate::state::{
 // ==================================================================
 
 /// Represents messages sent **from** Dart **to** Rust.
-pub trait Message {
+pub trait Message: Encode + Decode<()> {
     fn as_any(self) -> Box<dyn Any>
     where
         Self: Sized + 'static,
@@ -40,6 +40,9 @@ pub enum MessageType {
 
     /// Transcribes the audio data.
     Transcribe,
+
+    /// Message used for debugging.
+    Debug,
 }
 
 impl From<u8> for MessageType {
@@ -49,6 +52,7 @@ impl From<u8> for MessageType {
             1 => MessageType::UpdateAudioData,
             2 => MessageType::DetectWakeWords,
             3 => MessageType::Transcribe,
+            4 => MessageType::Debug,
             _ => unreachable!(),
         }
     }
@@ -70,6 +74,10 @@ impl Message for DetectWakeWords {}
 pub struct Transcribe;
 impl Message for Transcribe {}
 
+#[derive(Debug, Encode, Decode)]
+pub struct DebugMessage(String);
+impl Message for DebugMessage {}
+
 // ==================================================================
 //                              Responses
 // ==================================================================
@@ -82,20 +90,27 @@ pub enum ResponseType {
     Error,
 }
 
+impl Into<u8> for ResponseType {
+    fn into(self) -> u8 {
+        match self {
+            ResponseType::Text => 0,
+            ResponseType::WakeWord => 1,
+            ResponseType::Error => 2,
+        }
+    }
+}
+
+/// Represents text responses sent **from** Rust **to** Dart.
 #[derive(Debug, Encode, Decode)]
 pub struct TextResponse(String);
 
+/// Represents response to `DetectWakeWord` message sent **from** Rust **to** Dart.
 #[derive(Debug, Encode, Decode)]
 pub struct WakeWordResponse(WakeWordDetection);
 
+/// Represents error responses sent **from** Rust **to** Dart.
 #[derive(Debug, Encode, Decode)]
 pub struct ErrorResponse(String);
-
-#[derive(Debug, Encode, Decode)]
-pub struct Response<T> {
-    kind: ResponseType,
-    value: T,
-}
 
 // ==================================================================
 //                              Public API
@@ -110,6 +125,7 @@ pub fn send_message_to_rust(
     msg_type: u8,
     msg_ptr: *const ffi::c_void,
     msg_len: usize,
+    resp_type: *mut u8,
     resp_len: *mut usize,
 ) -> *mut ffi::c_void {
     // Decode message
@@ -117,23 +133,29 @@ pub fn send_message_to_rust(
     let message = match kind {
         MessageType::LoadModel => {
             let message: LoadModel = deserialize(msg_ptr, msg_len)
-                .map_err(|e| return rust_error(e, resp_len))
+                .map_err(|e| return rust_error(e, resp_type, resp_len))
                 .unwrap();
             message.as_any()
         }
         MessageType::UpdateAudioData => {
             let message: UpdateAudioData = deserialize(msg_ptr, msg_len)
-                .map_err(|e| return rust_error(e, resp_len))
+                .map_err(|e| return rust_error(e, resp_type, resp_len))
                 .unwrap();
             message.as_any()
         }
         MessageType::DetectWakeWords => {
             let message: DetectWakeWords = deserialize(msg_ptr, msg_len)
-                .map_err(|e| return rust_error(e, resp_len))
+                .map_err(|e| return rust_error(e, resp_type, resp_len))
                 .unwrap();
             message.as_any()
         }
         MessageType::Transcribe => Transcribe.as_any(),
+        MessageType::Debug => {
+            let message: DebugMessage = deserialize(msg_ptr, msg_len)
+                .map_err(|e| return rust_error(e, resp_type, resp_len))
+                .unwrap();
+            message.as_any()
+        }
     };
 
     // Respond to message
@@ -143,16 +165,14 @@ pub fn send_message_to_rust(
             let message = message.concrete::<LoadModel>();
             let model_path = &message.0;
             load_model(model_path)
-                .map_err(|e| return rust_error(e, resp_len))
+                .map_err(|e| return rust_error(e, resp_type, resp_len))
                 .unwrap();
 
             // Return serialized response
-            let response = Response {
-                kind: ResponseType::Text,
-                value: TextResponse(format!("Model path set to: {model_path}")),
-            };
+            unsafe { *resp_type = ResponseType::Text.into() };
+            let response = TextResponse(format!("Model path set to: {model_path}"));
             return serialize(response, resp_len)
-                .map_err(|e| return rust_error(e, resp_len))
+                .map_err(|e| return rust_error(e, resp_type, resp_len))
                 .unwrap();
         }
         MessageType::UpdateAudioData => {
@@ -160,19 +180,17 @@ pub fn send_message_to_rust(
             let message = message.concrete::<UpdateAudioData>();
             let new_data = &message.0;
             update_audio_data(new_data)
-                .map_err(|e| return rust_error(e, resp_len))
+                .map_err(|e| return rust_error(e, resp_type, resp_len))
                 .unwrap();
 
             // Return serialized response
-            let response = Response {
-                kind: ResponseType::Text,
-                value: TextResponse(format!(
-                    "Audio data updated with {} samples",
-                    new_data.len()
-                )),
-            };
+            unsafe { *resp_type = ResponseType::Text.into() };
+            let response = TextResponse(format!(
+                "Audio data updated with {} samples",
+                new_data.len()
+            ));
             return serialize(response, resp_len)
-                .map_err(|e| return rust_error(e, resp_len))
+                .map_err(|e| return rust_error(e, resp_type, resp_len))
                 .unwrap();
         }
         MessageType::DetectWakeWords => {
@@ -180,29 +198,36 @@ pub fn send_message_to_rust(
             let message = message.concrete::<DetectWakeWords>();
             let wake_words = &message.0;
             let detection = detect_wake_words(wake_words)
-                .map_err(|e| return rust_error(e, resp_len))
+                .map_err(|e| return rust_error(e, resp_type, resp_len))
                 .unwrap();
 
-            let response = Response {
-                kind: ResponseType::WakeWord,
-                value: WakeWordResponse(detection),
-            };
+            // Return serialized response
+            unsafe { *resp_type = ResponseType::WakeWord.into() };
+            let response = WakeWordResponse(detection);
             return serialize(response, resp_len)
-                .map_err(|e| return rust_error(e, resp_len))
+                .map_err(|e| return rust_error(e, resp_type, resp_len))
                 .unwrap();
         }
         MessageType::Transcribe => {
             // Transcribes the audio data
             let transcript = transcribe()
-                .map_err(|e| return rust_error(e, resp_len))
+                .map_err(|e| return rust_error(e, resp_type, resp_len))
                 .unwrap();
 
-            let response = Response {
-                kind: ResponseType::Text,
-                value: TextResponse(transcript),
-            };
+            // Return serialized response
+            unsafe { *resp_type = ResponseType::Text.into() };
+            let response = TextResponse(transcript);
             return serialize(response, resp_len)
-                .map_err(|e| return rust_error(e, resp_len))
+                .map_err(|e| return rust_error(e, resp_type, resp_len))
+                .unwrap();
+        }
+        MessageType::Debug => {
+            // Return serialized response
+            let message = message.concrete::<DebugMessage>();
+            unsafe { *resp_type = ResponseType::Text.into() };
+            let response = TextResponse(message.0.clone());
+            return serialize(response, resp_len)
+                .map_err(|e| return rust_error(e, resp_type, resp_len))
                 .unwrap();
         }
     };
@@ -260,11 +285,9 @@ fn deserialize<T: Decode<()>>(ptr: *const ffi::c_void, len: usize) -> Result<T, 
 }
 
 /// Returns an error `Response`.
-fn rust_error(details: String, resp_len: *mut usize) -> *mut ffi::c_void {
-    let error = Response {
-        kind: ResponseType::Error,
-        value: ErrorResponse(details),
-    };
+fn rust_error(details: String, resp_type: *mut u8, resp_len: *mut usize) -> *mut ffi::c_void {
+    unsafe { *resp_type = ResponseType::Error.into() };
+    let error = ErrorResponse(details);
     serialize(error, resp_len).unwrap()
 }
 

@@ -16,97 +16,192 @@ final _lib = DynamicLibrary.open('libnative.so');
 // NOTE: This must be kept in sync with Rust's `MessageType`.
 //
 /// The message type sent to Rust.
-enum MessageType implements BincodeEncodable {
+enum MessageType {
   loadModel,
   updateAudioData,
   detectWakeWords,
-  transcribe;
-
-  @override
-  void encode(BincodeWriter writer) {
-    switch (this) {
-      case MessageType.loadModel:
-        writer.writeU8(0);
-        break;
-      case MessageType.updateAudioData:
-        writer.writeU8(1);
-        break;
-      case MessageType.detectWakeWords:
-        writer.writeU8(2);
-        break;
-      case MessageType.transcribe:
-        writer.writeU8(3);
-        break;
-    }
-  }
+  transcribe,
+  debug,
 }
 
-class LoadModelMessage implements BincodeEncodable {
+class LoadModelMessage implements BincodeCodable {
   LoadModelMessage({required this.modelPath});
 
-  final String modelPath;
+  String modelPath;
 
   @override
   void encode(BincodeWriter writer) {
     writer.writeString(modelPath);
   }
+
+  @override
+  void decode(BincodeReader reader) {
+    modelPath = reader.readString();
+  }
 }
 
-class UpdateAudioDataMessage implements BincodeEncodable {
+class UpdateAudioDataMessage implements BincodeCodable {
   UpdateAudioDataMessage({required this.audioData});
 
-  final Float32List audioData;
+  Float32List audioData;
 
   @override
   void encode(BincodeWriter writer) {
     writer.writeFloat32List(audioData);
   }
+
+  @override
+  void decode(BincodeReader reader) {
+    audioData = Float32List.fromList(reader.readFloat32List());
+  }
 }
 
-class DetectWakeWordsMessage implements BincodeEncodable {
+class DetectWakeWordsMessage implements BincodeCodable {
   DetectWakeWordsMessage({required this.wakeWords});
 
-  final List<String> wakeWords;
+  List<String> wakeWords;
 
   @override
   void encode(BincodeWriter writer) {
     writer.writeList(wakeWords, writer.writeString);
   }
+
+  @override
+  void decode(BincodeReader reader) {
+    wakeWords = reader.readList(reader.readString);
+  }
 }
 
 // NOTE: This is a ZST in Rust, so no need to send it across.
-class TranscribeMessage {}
+class TranscribeMessage implements BincodeCodable {
+  @override
+  void decode(BincodeReader reader) {}
+
+  @override
+  void encode(BincodeWriter writer) {}
+}
+
+class DebugMessage implements BincodeCodable {
+  DebugMessage({required this.message});
+
+  String message;
+
+  @override
+  void encode(BincodeWriter writer) {
+    writer.writeString(message);
+  }
+
+  @override
+  void decode(BincodeReader reader) {
+    message = reader.readString();
+  }
+}
 
 // ==================================================================
 // Native `Response` types
 // ==================================================================
 
-// NOTE: This must be kept in sync with Rust's `MessageType`.
+// NOTE: This must be kept in sync with Rust's `ResponseType`.
 //
 /// The response type sent from Rust.
-enum ResponseType implements BincodeEncodable {
-  loadModel,
-  updateAudioData,
-  detectWakeWords,
-  transcribe;
+enum ResponseType { text, wakeWord, error }
+
+abstract class RustResponse<T> {
+  ResponseType get kind;
+  T get value;
+}
+
+class TextResponse extends RustResponse<String> implements BincodeCodable {
+  String text;
+
+  TextResponse(this.text);
+  TextResponse.empty() : text = '';
+
+  @override
+  void decode(BincodeReader reader) {
+    text = reader.readString();
+  }
 
   @override
   void encode(BincodeWriter writer) {
-    switch (this) {
-      case ResponseType.loadModel:
-        writer.writeU8(loadModel.index);
-        break;
-      case ResponseType.updateAudioData:
-        writer.writeU8(updateAudioData.index);
-        break;
-      case ResponseType.detectWakeWords:
-        writer.writeU8(detectWakeWords.index);
-        break;
-      case ResponseType.transcribe:
-        writer.writeU8(transcribe.index);
-        break;
-    }
+    writer.writeString(text);
   }
+
+  @override
+  ResponseType get kind => ResponseType.text;
+
+  @override
+  String get value => text;
+}
+
+class WakeWordDetection implements BincodeCodable {
+  bool detected;
+  int? startIdx;
+  int? endIdx;
+
+  WakeWordDetection(this.detected);
+  WakeWordDetection.empty() : detected = false;
+
+  @override
+  void decode(BincodeReader reader) {
+    detected = reader.readBool();
+    startIdx = reader.readOptionU64();
+    endIdx = reader.readOptionU64();
+  }
+
+  @override
+  void encode(BincodeWriter writer) {
+    writer.writeBool(detected);
+    writer.writeOptionU64(startIdx);
+    writer.writeOptionU64(endIdx);
+  }
+}
+
+class WakeWordResponse extends RustResponse<WakeWordDetection>
+    implements BincodeCodable {
+  WakeWordDetection detection;
+
+  WakeWordResponse(this.detection);
+  WakeWordResponse.empty() : detection = WakeWordDetection.empty();
+
+  @override
+  void decode(BincodeReader reader) {
+    detection = reader.readNestedObjectForFixed(WakeWordDetection.empty());
+  }
+
+  @override
+  void encode(BincodeWriter writer) {
+    writer.writeNestedValueForFixed(detection);
+  }
+
+  @override
+  ResponseType get kind => ResponseType.wakeWord;
+
+  @override
+  WakeWordDetection get value => detection;
+}
+
+class ErrorResponse extends RustResponse<String> implements BincodeCodable {
+  String text;
+
+  ErrorResponse(this.text);
+  ErrorResponse.empty() : text = '';
+
+  @override
+  void decode(BincodeReader reader) {
+    text = reader.readString();
+  }
+
+  @override
+  void encode(BincodeWriter writer) {
+    writer.writeString(text);
+  }
+
+  @override
+  ResponseType get kind => ResponseType.error;
+
+  @override
+  String get value => text;
 }
 
 // ==================================================================
@@ -117,19 +212,24 @@ enum ResponseType implements BincodeEncodable {
 //     msg_type: u8,
 //     msg_ptr: *const ffi::c_void,
 //     msg_len: usize,
+//     resp_type: *mut u8,
 //     resp_len: *mut usize,
 // ) -> *mut ffi::c_void
 typedef _SendMessageToRustNativeFn =
     Pointer<Void> Function(
+      Uint8 msgType,
       Pointer<Void> msgPtr,
       UintPtr msgLen,
-      Pointer<UintPtr> resLenOut,
+      Pointer<Uint8> respTypeOut,
+      Pointer<UintPtr> respLenOut,
     );
 typedef _SendMessageToRustFn =
     Pointer<Void> Function(
+      int msgType,
       Pointer<Void> msgPtr,
       int msgLen,
-      Pointer<UintPtr> resLenOut,
+      Pointer<Uint8> respTypeOut,
+      Pointer<UintPtr> respLenOut,
     );
 
 // fn free_response(ptr: *const ffi::c_void, len: usize)
@@ -142,8 +242,11 @@ typedef _FreeResponseFn = void Function(Pointer<Void> ptr, int len);
 
 /// Sends the specified message *to* Rust *from* Dart.
 ///
-/// @param modelPath The path for the model.
-/// @param len The length of the path (in bytes).
+/// @param msgType The type of the message.
+/// @param msgPtr The actual message.
+/// @param msgLen The length of the message (in bytes).
+/// @param respTypeOut The type of the response from Rust.
+/// @param respLenOut The length of the response (in bytes).
 ///
 /// @returns A pointer to a `Response` object.
 ///

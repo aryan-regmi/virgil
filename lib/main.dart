@@ -1,9 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:virgil/messages.dart';
-import 'package:virgil/model_manager.dart';
-import 'package:virgil/speech_recognition.dart';
+import 'package:virgil/native.dart';
+import 'package:virgil/rust_bridge.dart';
 
 void main() {
   runApp(const MyApp());
@@ -35,7 +34,8 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  final SpeechRecognition _speech = SpeechRecognition();
+  // final SpeechRecognition _speech = SpeechRecognition();
+  String? _text;
 
   @override
   void initState() {
@@ -47,23 +47,42 @@ class _MyHomePageState extends State<MyHomePage> {
 
   @override
   void dispose() {
-    _speech.closeListener();
+    // _speech.closeListener();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final listenButton = ElevatedButton(
-      onPressed: _speech.isListening
-          ? null
-          : () async => await _speech.startListening(),
-      child: Text('Listen'),
-    );
-    final pauseButton = ElevatedButton(
-      onPressed: _speech.isListening
-          ? () async => await _speech.pauseListening()
-          : null,
-      child: Text('Pause'),
+    // final listenButton = ElevatedButton(
+    //   onPressed: _speech.isListening
+    //       ? null
+    //       : () async => await _speech.startListening(),
+    //   child: Text('Listen'),
+    // );
+    // final pauseButton = ElevatedButton(
+    //   onPressed: _speech.isListening
+    //       ? () async => await _speech.pauseListening()
+    //       : null,
+    //   child: Text('Pause'),
+    // );
+    final sendButton = ElevatedButton(
+      onPressed: () async {
+        final response = await sendMessage(
+          messageType: MessageType.debug,
+          message: DebugMessage(message: 'Hi from Flutter!'),
+        );
+        switch (response.kind) {
+          case ResponseType.text:
+          case ResponseType.error:
+            setState(() {
+              _text = response.value;
+            });
+            break;
+          case ResponseType.wakeWord:
+            break;
+        }
+      },
+      child: Text('Send to Rust'),
     );
 
     return Scaffold(
@@ -74,11 +93,7 @@ class _MyHomePageState extends State<MyHomePage> {
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            listenButton,
-            pauseButton,
-            Text(_speech.text == null ? '' : _speech.text!),
-          ],
+          children: <Widget>[sendButton, Text(_text != null ? _text! : '')],
         ),
       ),
     );
