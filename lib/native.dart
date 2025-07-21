@@ -20,14 +20,7 @@ final _lib = DynamicLibrary.open('libnative.so');
 // NOTE: This must be kept in sync with Rust's `MessageType`.
 //
 /// The message type sent to Rust.
-enum MessageType {
-  loadModel,
-  setWakeWords,
-  updateAudioData,
-  detectWakeWords,
-  transcribe,
-  debug,
-}
+enum MessageType { loadModel, setWakeWords, detectWakeWords, transcribe, debug }
 
 abstract class DartMessage implements BincodeCodable {
   int get lengthInBytes;
@@ -77,8 +70,8 @@ class SetWakeWords extends DartMessage {
   }
 }
 
-class UpdateAudioDataMessage extends DartMessage {
-  UpdateAudioDataMessage({required this.audioData});
+class DetectWakeWordsMessage extends DartMessage {
+  DetectWakeWordsMessage({required this.audioData});
 
   Float32List audioData;
 
@@ -96,28 +89,23 @@ class UpdateAudioDataMessage extends DartMessage {
   int get lengthInBytes => audioData.lengthInBytes;
 }
 
-// NOTE: This is a ZST in Rust, so no need to send it across.
-class DetectWakeWordsMessage extends DartMessage {
-  @override
-  void encode(BincodeWriter writer) {}
-
-  @override
-  void decode(BincodeReader reader) {}
-
-  @override
-  int get lengthInBytes => 0;
-}
-
-// NOTE: This is a ZST in Rust, so no need to send it across.
 class TranscribeMessage extends DartMessage {
-  @override
-  void decode(BincodeReader reader) {}
+  TranscribeMessage({required this.audioData});
+
+  Float32List audioData;
 
   @override
-  void encode(BincodeWriter writer) {}
+  void encode(BincodeWriter writer) {
+    writer.writeFloat32List(audioData);
+  }
 
   @override
-  int get lengthInBytes => 0;
+  void decode(BincodeReader reader) {
+    audioData = Float32List.fromList(reader.readFloat32List());
+  }
+
+  @override
+  int get lengthInBytes => audioData.lengthInBytes;
 }
 
 class DebugMessage extends DartMessage {
@@ -186,8 +174,8 @@ class TextResponse extends RustResponse<String> {
 
 class WakeWordDetection implements BincodeCodable {
   bool detected;
-  int? startIdx;
-  int? endIdx;
+  int startIdx = -1;
+  int endIdx = -1;
 
   WakeWordDetection(this.detected);
   WakeWordDetection.empty() : detected = false;
@@ -195,15 +183,15 @@ class WakeWordDetection implements BincodeCodable {
   @override
   void decode(BincodeReader reader) {
     detected = reader.readBool();
-    startIdx = reader.readOptionU64();
-    endIdx = reader.readOptionU64();
+    startIdx = reader.readU64();
+    endIdx = reader.readU64();
   }
 
   @override
   void encode(BincodeWriter writer) {
     writer.writeBool(detected);
-    writer.writeOptionU64(startIdx);
-    writer.writeOptionU64(endIdx);
+    writer.writeU64(startIdx);
+    writer.writeU64(endIdx);
   }
 }
 

@@ -6,9 +6,7 @@ use std::{
 
 use bincode::{Decode, Encode, decode_from_slice, encode_into_slice};
 
-use crate::state::{
-    WakeWordDetection, detect_wake_words, load_model, set_wake_words, transcribe, update_audio_data,
-};
+use crate::state::{WakeWordDetection, detect_wake_words, load_model, set_wake_words, transcribe};
 
 // ==================================================================
 //                              Messages
@@ -33,9 +31,6 @@ pub enum MessageType {
     /// Set wake words.
     SetWakeWords,
 
-    /// Update the audio data to be transcribed.
-    UpdateAudioData,
-
     /// Detect for the given wake words in the audio data.
     DetectWakeWords,
 
@@ -52,10 +47,9 @@ impl From<u8> for MessageType {
         match value {
             0 => MessageType::LoadModel,
             1 => MessageType::SetWakeWords,
-            2 => MessageType::UpdateAudioData,
-            3 => MessageType::DetectWakeWords,
-            4 => MessageType::Transcribe,
-            5 => MessageType::Debug,
+            2 => MessageType::DetectWakeWords,
+            3 => MessageType::Transcribe,
+            4 => MessageType::Debug,
             _ => unreachable!(),
         }
     }
@@ -70,15 +64,11 @@ pub struct SetWakeWords(Vec<String>);
 impl Message for SetWakeWords {}
 
 #[derive(Debug, Encode, Decode)]
-pub struct UpdateAudioData(Vec<f32>);
-impl Message for UpdateAudioData {}
-
-#[derive(Debug, Encode, Decode)]
-pub struct DetectWakeWords;
+pub struct DetectWakeWords(Vec<f32>);
 impl Message for DetectWakeWords {}
 
 #[derive(Debug, Encode, Decode)]
-pub struct Transcribe;
+pub struct Transcribe(Vec<f32>);
 impl Message for Transcribe {}
 
 #[derive(Debug, Encode, Decode)]
@@ -175,14 +165,18 @@ pub fn send_message_to_rust(
                 .unwrap();
             message.as_any()
         }
-        MessageType::UpdateAudioData => {
-            let message: UpdateAudioData = deserialize(msg_ptr, msg_len)
+        MessageType::DetectWakeWords => {
+            let message: DetectWakeWords = deserialize(msg_ptr, msg_len)
                 .map_err(|e| return rust_error(e, resp_type, resp_len))
                 .unwrap();
             message.as_any()
         }
-        MessageType::DetectWakeWords => DetectWakeWords.as_any(),
-        MessageType::Transcribe => Transcribe.as_any(),
+        MessageType::Transcribe => {
+            let message: Transcribe = deserialize(msg_ptr, msg_len)
+                .map_err(|e| return rust_error(e, resp_type, resp_len))
+                .unwrap();
+            message.as_any()
+        }
         MessageType::Debug => {
             let message: DebugMessage = deserialize(msg_ptr, msg_len)
                 .map_err(|e| return rust_error(e, resp_type, resp_len))
@@ -222,27 +216,10 @@ pub fn send_message_to_rust(
                 .map_err(|e| return rust_error(e, resp_type, resp_len))
                 .unwrap();
         }
-        MessageType::UpdateAudioData => {
-            // Updates the audio data
-            let message = message.concrete::<UpdateAudioData>();
-            let new_data = &message.0;
-            update_audio_data(new_data)
-                .map_err(|e| return rust_error(e, resp_type, resp_len))
-                .unwrap();
-
-            // Return serialized response
-            unsafe { *resp_type = ResponseType::Text.into() };
-            let response = TextResponse(format!(
-                "Audio data updated with {} samples",
-                new_data.len()
-            ));
-            return serialize(response, resp_len)
-                .map_err(|e| return rust_error(e, resp_type, resp_len))
-                .unwrap();
-        }
         MessageType::DetectWakeWords => {
             // Detects the wake word
-            let detection = detect_wake_words()
+            let message = message.concrete::<DetectWakeWords>();
+            let detection = detect_wake_words(&message.0)
                 .map_err(|e| return rust_error(e, resp_type, resp_len))
                 .unwrap();
 
@@ -255,7 +232,8 @@ pub fn send_message_to_rust(
         }
         MessageType::Transcribe => {
             // Transcribes the audio data
-            let transcript = transcribe()
+            let message = message.concrete::<Transcribe>();
+            let transcript = transcribe(&message.0)
                 .map_err(|e| return rust_error(e, resp_type, resp_len))
                 .unwrap();
 

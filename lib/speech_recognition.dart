@@ -8,7 +8,7 @@ import 'package:virgil/model_manager.dart';
 import 'package:virgil/native.dart';
 import 'package:virgil/rust_bridge.dart';
 
-final _logger = Logger();
+final _logger = Logger(level: Level.info);
 
 // TODO: Add ProcessCommands class to actually process the users commands!
 
@@ -37,6 +37,9 @@ class SpeechRecognition {
 
   /// The number of audio channels.
   final int _numChannels;
+
+  /// The raw audio data from the microphone.
+  final List<double> _accumalatedAudioData = [];
 
   /// The controller for the audio stream.
   final StreamController<List<Float32List>> _streamController =
@@ -123,45 +126,46 @@ class SpeechRecognition {
     _streamController.stream.listen((channel) async {
       if (isListening) {
         // TODO: Handle stereo (more than one channel)
-        var audioData = channel[0];
-        _logger.d('Audio Data Len: ${audioData.length}');
-        final updateAudioResponse = await sendMessage(
-          messageType: MessageType.updateAudioData,
-          message: UpdateAudioDataMessage(audioData: audioData),
-        );
-        updateAudioResponse.unwrap();
+        var channelAudio = channel[0];
+        _accumalatedAudioData.addAll(channelAudio);
+        _logger.d('Audio Data: $_accumalatedAudioData');
 
         // Update transcript only if wake word is detected
-        // final detectWakeWordResponse = await sendMessage(
-        //   messageType: MessageType.detectWakeWords,
-        //   message: DetectWakeWordsMessage(),
-        // );
-        // final WakeWordDetection detectionInfo = detectWakeWordResponse.unwrap();
-        // if (detectionInfo.detected) {
-        // Transcribe audio data if wake word is detected
-        // _logger.i('Wake word detected');
-        // final transcribeResponse = await sendMessage(
-        //   messageType: MessageType.transcribe,
-        //   message: TranscribeMessage(),
-        // );
-        // final String transcribed = transcribeResponse.unwrap();
-        //
-        // Remove detected wake word from transcript
-        // if (detectionInfo.startIdx != null && detectionInfo.endIdx != null) {
-        //   transcript = transcribed.replaceRange(
-        //     detectionInfo.startIdx!,
-        //     detectionInfo.endIdx!,
-        //     '',
-        //   );
-        // } else {
-        //   transcript = transcribed;
-        // }
-        // }
-        final transcribeResponse = await sendMessage(
-          messageType: MessageType.transcribe,
-          message: TranscribeMessage(),
+        final detectWakeWordResponse = await sendMessage(
+          messageType: MessageType.detectWakeWords,
+          message: DetectWakeWordsMessage(
+            audioData: Float32List.fromList(_accumalatedAudioData),
+          ),
         );
-        transcript = transcribeResponse.unwrap();
+        final WakeWordDetection detectionInfo = detectWakeWordResponse.unwrap();
+        if (detectionInfo.detected) {
+          // Transcribe audio data if wake word is detected
+          _logger.i('Wake word detected');
+          final transcribeResponse = await sendMessage(
+            messageType: MessageType.transcribe,
+            message: TranscribeMessage(
+              audioData: channelAudio,
+              // audioData: Float32List.fromList(_accumalatedAudioData),
+            ),
+          );
+          final String transcribed = transcribeResponse.unwrap();
+          transcript = transcribed;
+
+          // Remove detected wake word from transcript
+          if (detectionInfo.startIdx != detectionInfo.endIdx) {
+            transcript = transcribed.replaceRange(
+              detectionInfo.startIdx,
+              detectionInfo.endIdx,
+              '',
+            );
+          } else {
+            transcript = transcribed;
+          }
+        }
+
+        if (_accumalatedAudioData.length >= _sampleRate) {
+          _accumalatedAudioData.clear();
+        }
       }
     });
   }

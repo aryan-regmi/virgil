@@ -7,15 +7,8 @@ use whisper_rs::{
     FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters, WhisperState,
 };
 
-/// The expected sample rate for the audio data.
-const MAX_AUDIO_SAMPLES: usize = 44_100;
-
 /// The state of the Whisper model.
 pub static MODEL_STATE: LazyLock<Mutex<Option<WhisperState>>> = LazyLock::new(|| Mutex::new(None));
-
-/// The current audio data to be processed.
-pub static AUDIO_DATA: LazyLock<Mutex<Vec<f32>>> =
-    LazyLock::new(|| Mutex::new(Vec::with_capacity(MAX_AUDIO_SAMPLES)));
 
 /// The wake words to listen for.
 pub static WAKE_WORDS: LazyLock<Mutex<Vec<String>>> = LazyLock::new(|| Mutex::new(vec![]));
@@ -30,16 +23,6 @@ pub fn load_model(model_path: &str) -> Result<(), String> {
     // Store the model
     let mut model = MODEL_STATE.lock().map_err(|e| e.to_string())?;
     *model = Some(state);
-    Ok(())
-}
-
-/// Updates the audio data to be transcribed.
-pub fn update_audio_data(data: &[f32]) -> Result<(), String> {
-    let mut audio_data = AUDIO_DATA.lock().map_err(|e| e.to_string())?;
-    if audio_data.len() >= MAX_AUDIO_SAMPLES {
-        audio_data.clear();
-    }
-    audio_data.extend_from_slice(data);
     Ok(())
 }
 
@@ -58,19 +41,18 @@ pub struct WakeWordDetection {
     pub detected: bool,
 
     /// The start index in the transcript of the detected word.
-    pub start_idx: Option<usize>,
+    pub start_idx: usize,
 
     /// The end index in the transcript of the detected word.
-    pub end_idx: Option<usize>,
+    pub end_idx: usize,
 }
 
 /// Checks if any wake words are present in the provided audio data.
 ///
 /// # Note
 /// This should only be called after [update_audio_data].
-pub fn detect_wake_words() -> Result<WakeWordDetection, String> {
+pub fn detect_wake_words(audio_data: &[f32]) -> Result<WakeWordDetection, String> {
     let wake_words = WAKE_WORDS.lock().map_err(|e| e.to_string())?;
-    let audio_data = AUDIO_DATA.lock().map_err(|e| e.to_string())?;
     if !audio_data.is_empty() {
         // Get transcript by running model
         let transcript = run_model(&audio_data)?.to_lowercase();
@@ -80,8 +62,8 @@ pub fn detect_wake_words() -> Result<WakeWordDetection, String> {
             if let Some(idx) = transcript.find(&phrase.to_lowercase()) {
                 return Ok(WakeWordDetection {
                     detected: true,
-                    start_idx: Some(idx),
-                    end_idx: Some(phrase.len()),
+                    start_idx: idx,
+                    end_idx: phrase.len(),
                 });
             }
         }
@@ -89,14 +71,13 @@ pub fn detect_wake_words() -> Result<WakeWordDetection, String> {
 
     Ok(WakeWordDetection {
         detected: false,
-        start_idx: None,
-        end_idx: None,
+        start_idx: 0,
+        end_idx: 0,
     })
 }
 
 /// Transcribes the audio data.
-pub fn transcribe() -> Result<String, String> {
-    let audio_data = AUDIO_DATA.lock().map_err(|e| e.to_string())?;
+pub fn transcribe(audio_data: &[f32]) -> Result<String, String> {
     if !audio_data.is_empty() {
         run_model(&audio_data)
     } else {
@@ -123,9 +104,6 @@ fn run_model(audio_data: &[f32]) -> Result<String, String> {
         for i in 0..num_segments {
             let segment = state.full_get_segment_text(i).unwrap();
             transcript.push_str(&segment);
-        }
-        if transcript == "[BLANK_AUDIO]" {
-            transcript.clear();
         }
         Ok(transcript.trim().into())
     } else {
