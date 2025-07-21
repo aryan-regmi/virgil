@@ -216,7 +216,7 @@ pub fn send_message_to_rust(
                 .unwrap();
 
             // Return serialized response
-            unsafe { *resp_type = ResponseType::WakeWord.into() };
+            unsafe { *resp_type = ResponseType::Text.into() };
             let response = TextResponse(format!("Wake words set to: [{}]", message.0.join(", ")));
             return serialize(response, resp_len)
                 .map_err(|e| return rust_error(e, resp_type, resp_len))

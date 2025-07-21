@@ -8,8 +8,5 @@ crate-type = ["cdylib"]
 
 [dependencies]
 bincode = { version = "2.0.1" }
-openssl = { version = "0.10.73", features = ["vendored"] }
 whisper-rs = { version = "0.14.3", features = ["tracing_backend"] }
-
-[profile.release]
-debug = true
+# openssl = { version = "0.10.73", features = ["vendored"] }

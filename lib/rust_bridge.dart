@@ -39,7 +39,7 @@ RustResponse _sendMessage<Message extends DartMessage>(Map args) {
   _logger.i('Message encoded: $message');
 
   // Allocate memory to send to Rust
-  final msgLen = message.lengthInBytes;
+  final msgLen = encodedMessage.length;
   final msgPtr = calloc.allocate<Uint8>(msgLen);
   final responseTypePtr = calloc.allocate<Uint8>(sizeOf<Uint8>());
   final responseLenPtr = calloc.allocate<UintPtr>(sizeOf<UintPtr>());
@@ -72,6 +72,7 @@ RustResponse _sendMessage<Message extends DartMessage>(Map args) {
   final responseBytesPtr = responsePtr.cast<Uint8>();
   final responseBytes = responseBytesPtr.asTypedList(responseLenPtr.value);
   final responseType = ResponseType.values[responseTypePtr.value];
+  _logger.d('Response Type: $responseType');
   final response = _decodeResponse(responseType, responseBytes);
   _freeAllocs(dartAllocs: dartAllocs, nativeAllocs: nativeAllocs);
   return response;
