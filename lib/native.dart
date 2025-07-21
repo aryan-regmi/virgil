@@ -124,6 +124,14 @@ enum ResponseType { text, wakeWord, error }
 abstract class RustResponse<T> implements BincodeCodable {
   ResponseType get kind;
   T get value;
+
+  /// Returns the `value` of the response, or throws an exception if the response type is `RustResponse.error`.
+  T unwrap() {
+    if (kind == ResponseType.error) {
+      throw Exception("Rust error: $value");
+    }
+    return value;
+  }
 }
 
 class TextResponse extends RustResponse<String> {
