@@ -8,10 +8,10 @@ import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart';
 
 /// The Rust library for communication.
-// final _lib = DynamicLibrary.open('libnative.so');
-final _lib = DynamicLibrary.open(
-  'native/target/release/libnative.so',
-); // FOR LINUX ONLY
+final _lib = DynamicLibrary.open('libnative.so');
+// final _lib = DynamicLibrary.open(
+//   'native/target/release/libnative.so',
+// ); // FOR LINUX ONLY
 
 // ==================================================================
 // Native `Message` types
