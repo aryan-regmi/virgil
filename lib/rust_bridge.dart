@@ -19,8 +19,7 @@ Future<RustResponse> sendMessage<Message extends DartMessage>({
   required Message message,
 }) async {
   var args = {"messageType": messageType, "message": message};
-  return _sendMessage(args);
-  // return compute(_sendMessage, args); // FIXME: Run message passing in isolate?
+  return compute(_sendMessage, args);
 }
 
 /// Sends the given message to Rust, and returns its response.
