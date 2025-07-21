@@ -30,8 +30,7 @@ pub fn load_model(model_path: &str) -> Result<(), String> {
     // Store the model
     let mut model = MODEL_STATE.lock().map_err(|e| e.to_string())?;
     *model = Some(state);
-
-    todo!()
+    Ok(())
 }
 
 /// Updates the audio data to be transcribed.

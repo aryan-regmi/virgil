@@ -280,6 +280,7 @@ pub fn free_response(ptr: *const ffi::c_void, len: usize) {
 /// The callier must free the the returned pointer with [free_response].
 fn serialize<T: Encode>(value: T, len_ptr: *mut usize) -> Result<*mut ffi::c_void, String> {
     let value_len = size_of_val(&value);
+    eprintln!("{}", value_len);
     let mut bytes = vec![0; value_len + size_of::<T>()];
     let written = encode_into_slice(
         value,
@@ -314,6 +315,7 @@ fn deserialize<T: Decode<()>>(ptr: *const ffi::c_void, len: usize) -> Result<T, 
 
 /// Returns an error `Response`.
 fn rust_error(details: String, resp_type: *mut u8, resp_len: *mut usize) -> *mut ffi::c_void {
+    eprintln!("{}", details);
     if resp_type.is_null() || resp_len.is_null() {
         return std::ptr::null_mut();
     }

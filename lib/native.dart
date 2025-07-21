@@ -4,13 +4,14 @@ library;
 import 'dart:ffi';
 
 import 'package:d_bincode/d_bincode.dart';
+import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart';
 
 /// The Rust library for communication.
-final _lib = DynamicLibrary.open('libnative.so');
-// final _lib = DynamicLibrary.open(
-//   'native/target/release/libnative.so',
-// ); // FOR LINUX ONLY
+// final _lib = DynamicLibrary.open('libnative.so');
+final _lib = DynamicLibrary.open(
+  'native/target/release/libnative.so',
+); // FOR LINUX ONLY
 
 // ==================================================================
 // Native `Message` types
@@ -28,7 +29,9 @@ enum MessageType {
   debug,
 }
 
-abstract class DartMessage implements BincodeCodable {}
+abstract class DartMessage implements BincodeCodable {
+  int get lengthInBytes;
+}
 
 class LoadModelMessage extends DartMessage {
   LoadModelMessage({required this.modelPath});
@@ -44,6 +47,9 @@ class LoadModelMessage extends DartMessage {
   void decode(BincodeReader reader) {
     modelPath = reader.readString();
   }
+
+  @override
+  int get lengthInBytes => modelPath.length + sizeOf<Pointer<Utf8>>();
 }
 
 class SetWakeWords extends DartMessage {
@@ -59,6 +65,15 @@ class SetWakeWords extends DartMessage {
   @override
   void encode(BincodeWriter writer) {
     writer.writeList(wakeWords, writer.writeString);
+  }
+
+  @override
+  // TODO: implement lengthInBytes
+  int get lengthInBytes {
+    var len = wakeWords.length;
+    for (var str in wakeWords) {
+      len += str.length;
+    }
   }
 }
 
