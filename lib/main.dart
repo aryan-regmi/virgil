@@ -1,40 +1,43 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:virgil/native.dart';
-import 'package:virgil/rust_bridge.dart';
+import 'package:virgil/speech_recognition.dart';
 
 void main() {
-  runApp(const MyApp());
+  runApp(const Virgil());
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class Virgil extends StatelessWidget {
+  const Virgil({super.key});
 
   // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      title: 'Virgil Assistant',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      home: const HomePage(title: 'Virgil AI'),
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
+/// The home page of the application.
+class HomePage extends StatefulWidget {
+  const HomePage({super.key, required this.title});
 
   final String title;
 
   @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  State<HomePage> createState() => _HomePageState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  String? _text;
+/// The state of the home page.
+class _HomePageState extends State<HomePage> {
+  final SpeechRecognition _speech = SpeechRecognition(
+    wakeWords: ['Hey Virgil'],
+  );
 
   @override
   void initState() {
@@ -51,20 +54,32 @@ class _MyHomePageState extends State<MyHomePage> {
 
   @override
   Widget build(BuildContext context) {
-    final sendButton = ElevatedButton(
-      onPressed: () async {
-        final response = await sendMessage(
-          messageType: MessageType.debug,
-          message: DebugMessage(message: 'Hi from Flutter!'),
-        );
-        if (response.kind == ResponseType.text ||
-            response.kind == ResponseType.error) {
-          setState(() {
-            _text = response.value;
-          });
-        }
-      },
-      child: Text('Send to Rust'),
+    final listenButton = ElevatedButton(
+      onPressed: _speech.isListening
+          ? null
+          : () async => await _speech.startListening(),
+      child: Text('Listen'),
+    );
+    final pauseButton = ElevatedButton(
+      onPressed: _speech.isListening
+          ? () async => await _speech.pauseListening()
+          : null,
+      child: Text('Pause'),
+    );
+    final stopButton = ElevatedButton(
+      onPressed: _speech.isListening
+          ? () async => await _speech.closeListener()
+          : null,
+      child: Text('Pause'),
+    );
+    final restartButton = ElevatedButton(
+      onPressed: _speech.isListening
+          ? null
+          : () async {
+              await _speech.closeListener();
+              await _speech.restartListener();
+            },
+      child: Text('Restart'),
     );
 
     return Scaffold(
@@ -76,8 +91,11 @@ class _MyHomePageState extends State<MyHomePage> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
-            sendButton,
-            _text == null ? Text('Waiting...') : Text(_text!),
+            listenButton,
+            pauseButton,
+            stopButton,
+            restartButton,
+            Text(_speech.transcript),
           ],
         ),
       ),

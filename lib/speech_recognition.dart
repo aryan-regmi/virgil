@@ -10,6 +10,8 @@ import 'package:virgil/rust_bridge.dart';
 
 final _logger = Logger();
 
+// TODO: Add ProcessCommands class to actually process the users commands!
+
 /// Runs speech recognition on microphone input and processes the correrponding commands.
 class SpeechRecognition {
   SpeechRecognition({
@@ -25,7 +27,7 @@ class SpeechRecognition {
   bool isListening = false;
 
   /// The transcribed text.
-  String? transcript;
+  String transcript = '';
 
   /// The wake words to listen for.
   List<String> wakeWords;
@@ -75,6 +77,49 @@ class SpeechRecognition {
     setWakeWordsResponse.unwrap();
 
     // Initalize listener that runs speech recognition
+    _initSpeechListener();
+  }
+
+  /// Starts listening to the microphone.
+  Future<void> startListening() async {
+    await _recorder.startRecorder(
+      codec: Codec.pcmFloat32,
+      sampleRate: _sampleRate,
+      numChannels: _numChannels,
+      audioSource: AudioSource.defaultSource,
+      toStreamFloat32: _streamController.sink,
+    );
+    isListening = true;
+  }
+
+  /// Pauses the microphone listener.
+  Future<void> pauseListening() async {
+    if (isListening) {
+      isListening = false;
+      await _recorder.stopRecorder();
+    }
+  }
+
+  /// Closes the microphone listener.
+  Future<void> closeListener() async {
+    if (isListening) {
+      isListening = false;
+      await _recorder.stopRecorder();
+      await _recorder.closeRecorder();
+    }
+  }
+
+  /// Restarts the microphone listener after [closeListener] has been called.
+  Future<void> restartListener() async {
+    if (!isListening) {
+      _recorder.openRecorder();
+      _initSpeechListener();
+      startListening();
+    }
+  }
+
+  /// Initalizes the speech listener.
+  void _initSpeechListener() {
     _streamController.stream.listen((channel) async {
       if (isListening) {
         // TODO: Handle stereo (more than one channel)
@@ -113,34 +158,5 @@ class SpeechRecognition {
         }
       }
     });
-  }
-
-  /// Starts listening to the microphone.
-  Future<void> startListening() async {
-    await _recorder.startRecorder(
-      codec: Codec.pcmFloat32,
-      sampleRate: _sampleRate,
-      numChannels: _numChannels,
-      audioSource: AudioSource.defaultSource,
-      toStreamFloat32: _streamController.sink,
-    );
-    isListening = true;
-  }
-
-  /// Pauses the listener.
-  Future<void> pauseListening() async {
-    if (isListening) {
-      isListening = false;
-      await _recorder.stopRecorder();
-    }
-  }
-
-  /// Closes the listener.
-  Future<void> closeListener() async {
-    if (isListening) {
-      isListening = false;
-      await _recorder.stopRecorder();
-      await _recorder.closeRecorder();
-    }
   }
 }
