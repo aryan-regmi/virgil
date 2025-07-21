@@ -31,17 +31,15 @@ RustResponse _sendMessage<Message extends DartMessage>(Map args) {
   // Encode message
   late final int msgType = messageType.index;
   late final Uint8List encodedMessage;
-  if (messageType == MessageType.transcribe ||
-      messageType == MessageType.detectWakeWords) {
-    // Ignore ZST messages
-    encodedMessage = Uint8List(0);
+  if (message.lengthInBytes == 0) {
+    encodedMessage = Uint8List(0); // NOTE: Don't encode ZST messages
   } else {
     encodedMessage = BincodeWriter.encode(message);
   }
   _logger.i('Message encoded: $message');
 
   // Allocate memory to send to Rust
-  final msgLen = encodedMessage.length;
+  final msgLen = message.lengthInBytes;
   final msgPtr = calloc.allocate<Uint8>(msgLen);
   final responseTypePtr = calloc.allocate<Uint8>(sizeOf<Uint8>());
   final responseLenPtr = calloc.allocate<UintPtr>(sizeOf<UintPtr>());

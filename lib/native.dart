@@ -68,12 +68,12 @@ class SetWakeWords extends DartMessage {
   }
 
   @override
-  // TODO: implement lengthInBytes
   int get lengthInBytes {
-    var len = wakeWords.length;
+    var len = wakeWords.length * sizeOf<Pointer<Utf8>>();
     for (var str in wakeWords) {
       len += str.length;
     }
+    return len;
   }
 }
 
@@ -91,6 +91,9 @@ class UpdateAudioDataMessage extends DartMessage {
   void decode(BincodeReader reader) {
     audioData = Float32List.fromList(reader.readFloat32List());
   }
+
+  @override
+  int get lengthInBytes => audioData.lengthInBytes;
 }
 
 // NOTE: This is a ZST in Rust, so no need to send it across.
@@ -100,6 +103,9 @@ class DetectWakeWordsMessage extends DartMessage {
 
   @override
   void decode(BincodeReader reader) {}
+
+  @override
+  int get lengthInBytes => 0;
 }
 
 // NOTE: This is a ZST in Rust, so no need to send it across.
@@ -109,6 +115,9 @@ class TranscribeMessage extends DartMessage {
 
   @override
   void encode(BincodeWriter writer) {}
+
+  @override
+  int get lengthInBytes => 0;
 }
 
 class DebugMessage extends DartMessage {
@@ -125,6 +134,9 @@ class DebugMessage extends DartMessage {
   void decode(BincodeReader reader) {
     message = reader.readString();
   }
+
+  @override
+  int get lengthInBytes => message.length;
 }
 
 // ==================================================================
