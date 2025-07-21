@@ -70,7 +70,7 @@ class _HomePageState extends State<HomePage> {
       onPressed: _speech.isListening
           ? () async => await _speech.closeListener()
           : null,
-      child: Text('Pause'),
+      child: Text('Stop'),
     );
     final restartButton = ElevatedButton(
       onPressed: _speech.isListening

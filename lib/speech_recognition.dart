@@ -123,39 +123,45 @@ class SpeechRecognition {
     _streamController.stream.listen((channel) async {
       if (isListening) {
         // TODO: Handle stereo (more than one channel)
-        var monoAudio = channel[0];
+        var audioData = channel[0];
+        _logger.d('Audio Data Len: ${audioData.length}');
         final updateAudioResponse = await sendMessage(
           messageType: MessageType.updateAudioData,
-          message: UpdateAudioDataMessage(audioData: monoAudio),
+          message: UpdateAudioDataMessage(audioData: audioData),
         );
         updateAudioResponse.unwrap();
 
         // Update transcript only if wake word is detected
-        final detectWakeWordResponse = await sendMessage(
-          messageType: MessageType.detectWakeWords,
-          message: DetectWakeWordsMessage(),
+        // final detectWakeWordResponse = await sendMessage(
+        //   messageType: MessageType.detectWakeWords,
+        //   message: DetectWakeWordsMessage(),
+        // );
+        // final WakeWordDetection detectionInfo = detectWakeWordResponse.unwrap();
+        // if (detectionInfo.detected) {
+        // Transcribe audio data if wake word is detected
+        // _logger.i('Wake word detected');
+        // final transcribeResponse = await sendMessage(
+        //   messageType: MessageType.transcribe,
+        //   message: TranscribeMessage(),
+        // );
+        // final String transcribed = transcribeResponse.unwrap();
+        //
+        // Remove detected wake word from transcript
+        // if (detectionInfo.startIdx != null && detectionInfo.endIdx != null) {
+        //   transcript = transcribed.replaceRange(
+        //     detectionInfo.startIdx!,
+        //     detectionInfo.endIdx!,
+        //     '',
+        //   );
+        // } else {
+        //   transcript = transcribed;
+        // }
+        // }
+        final transcribeResponse = await sendMessage(
+          messageType: MessageType.transcribe,
+          message: TranscribeMessage(),
         );
-        final WakeWordDetection detectionInfo = detectWakeWordResponse.unwrap();
-        if (detectionInfo.detected) {
-          // Transcribe audio data if wake word is detected
-          _logger.i('Wake word detected');
-          final transcribeResponse = await sendMessage(
-            messageType: MessageType.transcribe,
-            message: TranscribeMessage(),
-          );
-          final String transcribed = transcribeResponse.unwrap();
-
-          // Remove detected wake word from transcript
-          if (detectionInfo.startIdx != null && detectionInfo.endIdx != null) {
-            transcript = transcribed.replaceRange(
-              detectionInfo.startIdx!,
-              detectionInfo.endIdx!,
-              '',
-            );
-          } else {
-            transcript = transcribed;
-          }
-        }
+        transcript = transcribeResponse.unwrap();
       }
     });
   }

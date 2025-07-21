@@ -8,14 +8,14 @@ use whisper_rs::{
 };
 
 /// The expected sample rate for the audio data.
-const EXPECTED_SAMPLE_RATE: usize = 44_100;
+const MAX_AUDIO_SAMPLES: usize = 44_100;
 
 /// The state of the Whisper model.
 pub static MODEL_STATE: LazyLock<Mutex<Option<WhisperState>>> = LazyLock::new(|| Mutex::new(None));
 
 /// The current audio data to be processed.
 pub static AUDIO_DATA: LazyLock<Mutex<Vec<f32>>> =
-    LazyLock::new(|| Mutex::new(Vec::with_capacity(EXPECTED_SAMPLE_RATE)));
+    LazyLock::new(|| Mutex::new(Vec::with_capacity(MAX_AUDIO_SAMPLES)));
 
 /// The wake words to listen for.
 pub static WAKE_WORDS: LazyLock<Mutex<Vec<String>>> = LazyLock::new(|| Mutex::new(vec![]));
@@ -36,7 +36,9 @@ pub fn load_model(model_path: &str) -> Result<(), String> {
 /// Updates the audio data to be transcribed.
 pub fn update_audio_data(data: &[f32]) -> Result<(), String> {
     let mut audio_data = AUDIO_DATA.lock().map_err(|e| e.to_string())?;
-    audio_data.clear();
+    if audio_data.len() >= MAX_AUDIO_SAMPLES {
+        audio_data.clear();
+    }
     audio_data.extend_from_slice(data);
     Ok(())
 }
@@ -122,7 +124,10 @@ fn run_model(audio_data: &[f32]) -> Result<String, String> {
             let segment = state.full_get_segment_text(i).unwrap();
             transcript.push_str(&segment);
         }
-        Ok(transcript)
+        if transcript == "[BLANK_AUDIO]" {
+            transcript.clear();
+        }
+        Ok(transcript.trim().into())
     } else {
         Err("Invalid model state".into())
     }
