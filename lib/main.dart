@@ -36,7 +36,7 @@ class HomePage extends StatefulWidget {
 /// The state of the home page.
 class _HomePageState extends State<HomePage> {
   final SpeechRecognition _speech = SpeechRecognition(
-    wakeWords: ['Hey Virgil'],
+    wakeWords: ['Hey Virgil', 'Wake'],
   );
 
   @override

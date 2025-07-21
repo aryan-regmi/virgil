@@ -152,7 +152,7 @@ class SpeechRecognition {
           transcript = transcribed;
 
           // Remove detected wake word from transcript
-          if (detectionInfo.startIdx != detectionInfo.endIdx) {
+          if (detectionInfo.endIdx != 0) {
             transcript = transcribed.replaceRange(
               detectionInfo.startIdx,
               detectionInfo.endIdx,
