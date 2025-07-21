@@ -8,7 +8,9 @@ import 'package:flutter/foundation.dart';
 
 /// The Rust library for communication.
 final _lib = DynamicLibrary.open('libnative.so');
-// final _lib = DynamicLibrary.open('native/target/release/libnative.so'); // FOR LINUX ONLY
+// final _lib = DynamicLibrary.open(
+//   'native/target/release/libnative.so',
+// ); // FOR LINUX ONLY
 
 // ==================================================================
 // Native `Message` types
@@ -19,6 +21,7 @@ final _lib = DynamicLibrary.open('libnative.so');
 /// The message type sent to Rust.
 enum MessageType {
   loadModel,
+  setWakeWords,
   updateAudioData,
   detectWakeWords,
   transcribe,
@@ -43,6 +46,22 @@ class LoadModelMessage extends DartMessage {
   }
 }
 
+class SetWakeWords extends DartMessage {
+  SetWakeWords({required this.wakeWords});
+
+  List<String> wakeWords;
+
+  @override
+  void decode(BincodeReader reader) {
+    wakeWords = reader.readList(reader.readString);
+  }
+
+  @override
+  void encode(BincodeWriter writer) {
+    writer.writeList(wakeWords, writer.writeString);
+  }
+}
+
 class UpdateAudioDataMessage extends DartMessage {
   UpdateAudioDataMessage({required this.audioData});
 
@@ -59,20 +78,13 @@ class UpdateAudioDataMessage extends DartMessage {
   }
 }
 
+// NOTE: This is a ZST in Rust, so no need to send it across.
 class DetectWakeWordsMessage extends DartMessage {
-  DetectWakeWordsMessage({required this.wakeWords});
-
-  List<String> wakeWords;
+  @override
+  void encode(BincodeWriter writer) {}
 
   @override
-  void encode(BincodeWriter writer) {
-    writer.writeList(wakeWords, writer.writeString);
-  }
-
-  @override
-  void decode(BincodeReader reader) {
-    wakeWords = reader.readList(reader.readString);
-  }
+  void decode(BincodeReader reader) {}
 }
 
 // NOTE: This is a ZST in Rust, so no need to send it across.

@@ -32,3 +32,4 @@ build_emulator:
 	cargo ndk -t $(target_emulator) -o $(outdir) build --release
 
 build: build_v7 build_v8 build_emulator
+

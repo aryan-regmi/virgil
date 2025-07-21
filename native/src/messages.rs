@@ -7,7 +7,7 @@ use std::{
 use bincode::{Decode, Encode, decode_from_slice, encode_into_slice};
 
 use crate::state::{
-    WakeWordDetection, detect_wake_words, load_model, transcribe, update_audio_data,
+    WakeWordDetection, detect_wake_words, load_model, set_wake_words, transcribe, update_audio_data,
 };
 
 // ==================================================================
@@ -30,11 +30,12 @@ pub enum MessageType {
     /// Load the model from the given path.
     LoadModel,
 
+    /// Set wake words.
+    SetWakeWords,
+
     /// Update the audio data to be transcribed.
     UpdateAudioData,
 
-    // FIXME: Create separate message for setting wake words
-    //
     /// Detect for the given wake words in the audio data.
     DetectWakeWords,
 
@@ -45,14 +46,16 @@ pub enum MessageType {
     Debug,
 }
 
+// NOTE: Keep in sync with [MessageType]!
 impl From<u8> for MessageType {
     fn from(value: u8) -> Self {
         match value {
             0 => MessageType::LoadModel,
-            1 => MessageType::UpdateAudioData,
-            2 => MessageType::DetectWakeWords,
-            3 => MessageType::Transcribe,
-            4 => MessageType::Debug,
+            1 => MessageType::SetWakeWords,
+            2 => MessageType::UpdateAudioData,
+            3 => MessageType::DetectWakeWords,
+            4 => MessageType::Transcribe,
+            5 => MessageType::Debug,
             _ => unreachable!(),
         }
     }
@@ -63,11 +66,15 @@ pub struct LoadModel(String);
 impl Message for LoadModel {}
 
 #[derive(Debug, Encode, Decode)]
+pub struct SetWakeWords(Vec<String>);
+impl Message for SetWakeWords {}
+
+#[derive(Debug, Encode, Decode)]
 pub struct UpdateAudioData(Vec<f32>);
 impl Message for UpdateAudioData {}
 
 #[derive(Debug, Encode, Decode)]
-pub struct DetectWakeWords(Vec<String>);
+pub struct DetectWakeWords;
 impl Message for DetectWakeWords {}
 
 #[derive(Debug, Encode, Decode)]
@@ -142,18 +149,19 @@ pub fn send_message_to_rust(
                 .unwrap();
             message.as_any()
         }
+        MessageType::SetWakeWords => {
+            let message: SetWakeWords = deserialize(msg_ptr, msg_len)
+                .map_err(|e| return rust_error(e, resp_type, resp_len))
+                .unwrap();
+            message.as_any()
+        }
         MessageType::UpdateAudioData => {
             let message: UpdateAudioData = deserialize(msg_ptr, msg_len)
                 .map_err(|e| return rust_error(e, resp_type, resp_len))
                 .unwrap();
             message.as_any()
         }
-        MessageType::DetectWakeWords => {
-            let message: DetectWakeWords = deserialize(msg_ptr, msg_len)
-                .map_err(|e| return rust_error(e, resp_type, resp_len))
-                .unwrap();
-            message.as_any()
-        }
+        MessageType::DetectWakeWords => DetectWakeWords.as_any(),
         MessageType::Transcribe => Transcribe.as_any(),
         MessageType::Debug => {
             let message: DebugMessage = deserialize(msg_ptr, msg_len)
@@ -180,6 +188,20 @@ pub fn send_message_to_rust(
                 .map_err(|e| return rust_error(e, resp_type, resp_len))
                 .unwrap();
         }
+        MessageType::SetWakeWords => {
+            // Set the wake words
+            let message = message.concrete::<SetWakeWords>();
+            set_wake_words(&message.0)
+                .map_err(|e| return rust_error(e, resp_type, resp_len))
+                .unwrap();
+
+            // Return serialized response
+            unsafe { *resp_type = ResponseType::WakeWord.into() };
+            let response = TextResponse(format!("Wake words set to: [{}]", message.0.join(", ")));
+            return serialize(response, resp_len)
+                .map_err(|e| return rust_error(e, resp_type, resp_len))
+                .unwrap();
+        }
         MessageType::UpdateAudioData => {
             // Updates the audio data
             let message = message.concrete::<UpdateAudioData>();
@@ -200,9 +222,7 @@ pub fn send_message_to_rust(
         }
         MessageType::DetectWakeWords => {
             // Detects the wake word
-            let message = message.concrete::<DetectWakeWords>();
-            let wake_words = &message.0;
-            let detection = detect_wake_words(wake_words)
+            let detection = detect_wake_words()
                 .map_err(|e| return rust_error(e, resp_type, resp_len))
                 .unwrap();
 

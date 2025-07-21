@@ -11,8 +11,6 @@ import 'package:virgil/native.dart';
 
 final _logger = Logger();
 
-// FIXME: Send address to pointers between isolates!
-
 // TODO: Use writer/reader pools!
 
 /// Sends the given message to Rust in a background isolate and returns its response.
@@ -22,7 +20,7 @@ Future<RustResponse> sendMessage<Message extends DartMessage>({
 }) async {
   var args = {"messageType": messageType, "message": message};
   return _sendMessage(args);
-  // return compute(_sendMessage, args);
+  // return compute(_sendMessage, args); // FIXME: Run message passing in isolate?
 }
 
 /// Sends the given message to Rust, and returns its response.
@@ -33,8 +31,10 @@ RustResponse _sendMessage<Message extends DartMessage>(Map args) {
   // Encode message
   late final int msgType = messageType.index;
   late final Uint8List encodedMessage;
-  if (messageType == MessageType.transcribe) {
-    encodedMessage = Uint8List(0); // Ignore ZST messages
+  if (messageType == MessageType.transcribe ||
+      messageType == MessageType.detectWakeWords) {
+    // Ignore ZST messages
+    encodedMessage = Uint8List(0);
   } else {
     encodedMessage = BincodeWriter.encode(message);
   }

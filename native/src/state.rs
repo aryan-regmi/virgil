@@ -17,6 +17,9 @@ pub static MODEL_STATE: LazyLock<Mutex<Option<WhisperState>>> = LazyLock::new(||
 pub static AUDIO_DATA: LazyLock<Mutex<Vec<f32>>> =
     LazyLock::new(|| Mutex::new(Vec::with_capacity(EXPECTED_SAMPLE_RATE)));
 
+/// The wake words to listen for.
+pub static WAKE_WORDS: LazyLock<Mutex<Vec<String>>> = LazyLock::new(|| Mutex::new(vec![]));
+
 /// Loads the Whisper model from the given path.
 pub fn load_model(model_path: &str) -> Result<(), String> {
     // Create the model
@@ -39,6 +42,14 @@ pub fn update_audio_data(data: &[f32]) -> Result<(), String> {
     Ok(())
 }
 
+/// Sets the wake words to listen for.
+pub fn set_wake_words(words: &Vec<String>) -> Result<(), String> {
+    let mut wake_words = WAKE_WORDS.lock().map_err(|e| e.to_string())?;
+    wake_words.clear();
+    wake_words.extend_from_slice(&words);
+    Ok(())
+}
+
 /// Result of wake word detection.
 #[derive(Debug, Encode, Decode)]
 pub struct WakeWordDetection {
@@ -56,14 +67,15 @@ pub struct WakeWordDetection {
 ///
 /// # Note
 /// This should only be called after [update_audio_data].
-pub fn detect_wake_words(wake_words: &[String]) -> Result<WakeWordDetection, String> {
+pub fn detect_wake_words() -> Result<WakeWordDetection, String> {
+    let wake_words = WAKE_WORDS.lock().map_err(|e| e.to_string())?;
     let audio_data = AUDIO_DATA.lock().map_err(|e| e.to_string())?;
     if !audio_data.is_empty() {
         // Get transcript by running model
         let transcript = run_model(&audio_data)?.to_lowercase();
 
         // Check for wake words
-        for phrase in wake_words {
+        for phrase in &*wake_words {
             if let Some(idx) = transcript.find(&phrase.to_lowercase()) {
                 return Ok(WakeWordDetection {
                     detected: true,
