@@ -39,7 +39,7 @@ class SpeechRecognition {
   final int _numChannels;
 
   /// The raw audio data from the microphone.
-  final List<double> _accumalatedAudioData = [];
+  final List<double> _accumulatedAudioData = [];
 
   /// The controller for the audio stream.
   final StreamController<List<Float32List>> _streamController =
@@ -127,14 +127,16 @@ class SpeechRecognition {
       if (isListening) {
         // TODO: Handle stereo (more than one channel)
         var channelAudio = channel[0];
-        _accumalatedAudioData.addAll(channelAudio);
-        _logger.d('Audio Data: $_accumalatedAudioData');
+        _accumulatedAudioData.addAll(channelAudio);
+        if (_accumulatedAudioData.length < _sampleRate) {
+          return;
+        }
 
         // Update transcript only if wake word is detected
         final detectWakeWordResponse = await sendMessage(
           messageType: MessageType.detectWakeWords,
           message: DetectWakeWordsMessage(
-            audioData: Float32List.fromList(_accumalatedAudioData),
+            audioData: Float32List.fromList(_accumulatedAudioData),
           ),
         );
         final WakeWordDetection detectionInfo = detectWakeWordResponse.unwrap();
@@ -163,9 +165,7 @@ class SpeechRecognition {
           }
         }
 
-        if (_accumalatedAudioData.length >= _sampleRate) {
-          _accumalatedAudioData.clear();
-        }
+        _accumulatedAudioData.clear();
       }
     });
   }

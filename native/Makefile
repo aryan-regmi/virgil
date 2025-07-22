@@ -1,3 +1,5 @@
+MAKEFLAGS += -j4
+
 ndk_version := 27.0.12077973
 abi_v7 := armeabi-v7a
 abi_v8 := arm64-v8a
@@ -31,5 +33,9 @@ build_emulator:
 	BINDGEN_EXTRA_CLANG_ARGS="--sysroot=$(sysroot) -I$(sysroot)/usr/include" \
 	cargo ndk -t $(target_emulator) -o $(outdir) build --release
 
-build: build_v7 build_v8 build_emulator
+build_linux:
+	cargo b --release
+
+build: build_v7 build_v8 build_emulator build_linux
+	
 
