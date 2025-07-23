@@ -10,6 +10,8 @@ import 'package:virgil/rust_bridge.dart';
 
 final _logger = Logger(level: Level.info);
 
+// FIXME: Replace `flutter_sound` with `record` and implment low-power & active listening modes.
+
 // TODO: Add ProcessCommands class to actually process the users commands!
 
 /// Runs speech recognition on microphone input and processes the correrponding commands.
