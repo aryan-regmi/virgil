@@ -14,6 +14,41 @@ final _lib = DynamicLibrary.open('libnative.so');
 // ); // FOR LINUX ONLY
 
 // ==================================================================
+// TESTING
+// ==================================================================
+enum MessageStatus { success, error }
+
+class RustMessage implements BincodeCodable {
+  RustMessage({
+    required this.status,
+    required this.byteLen,
+    required this.message,
+  });
+  RustMessage.empty()
+    : status = MessageStatus.success,
+      byteLen = 0,
+      message = Uint8List(0);
+
+  MessageStatus status;
+  int byteLen;
+  Uint8List message;
+
+  @override
+  void decode(BincodeReader reader) {
+    status = MessageStatus.values[reader.readU8()];
+    byteLen = reader.readU64();
+    message = reader.readUint8List();
+  }
+
+  @override
+  void encode(BincodeWriter writer) {
+    writer.writeU8(status.index);
+    writer.writeU64(byteLen);
+    writer.writeUint8List(message);
+  }
+}
+
+// ==================================================================
 // Native `Message` types
 // ==================================================================
 

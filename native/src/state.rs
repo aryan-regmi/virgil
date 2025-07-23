@@ -3,6 +3,7 @@ use std::{
     sync::mpsc::{self, Sender},
 };
 
+use bincode::{Decode, Encode};
 use cpal::{
     Device, InputCallbackInfo, SampleRate, SupportedStreamConfig,
     traits::{DeviceTrait, HostTrait, StreamTrait},
@@ -13,15 +14,23 @@ use whisper_rs::{
 
 pub type VirgilResult<T> = Result<T, Box<dyn Error>>;
 
-pub struct VirgilState {
+const EXPECTED_SAMPLE_RATE: usize = 16_000;
+
+#[derive(Encode, Decode)]
+pub struct Context {
+    pub model_path: String,
+    pub wake_words: Vec<String>,
+    pub transcript: String,
+}
+
+pub struct Virgil {
     microphone: Device,
     config: SupportedStreamConfig,
     model_path: String,
     wake_words: Vec<String>,
 }
 
-impl VirgilState {
-    /// Creates a new `MicrophoneController`.
+impl Virgil {
     pub fn new(model_path: &str, wake_words: Vec<String>) -> VirgilResult<Self> {
         // Setup microphone
         let host = cpal::default_host();
@@ -32,7 +41,7 @@ impl VirgilState {
         let config = supported_configs
             .next()
             .ok_or_else(|| String::from("No supported configs found for the microphone"))?
-            .with_sample_rate(SampleRate(16_000));
+            .with_sample_rate(SampleRate(EXPECTED_SAMPLE_RATE as u32));
 
         Ok(Self {
             microphone,
@@ -84,6 +93,8 @@ impl VirgilState {
         Ok(())
     }
 
+    // FIXME: Accumulate audio data until it is equal to sample rate!
+    //
     /// Process the audio data from the microphone input.
     fn process_audio_data(
         sender: Sender<String>,
@@ -141,5 +152,29 @@ impl VirgilState {
         }
 
         Ok(transcript.trim().into())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_listening() -> VirgilResult<()> {
+        let mut transcript = String::with_capacity(1024);
+
+        let mut virgil = Virgil::new(
+            "test_assets/ggml-tiny.bin",
+            vec!["Hi", "Test", "Hello", "Wake"]
+                .iter()
+                .map(|v| (*v).into())
+                .collect(),
+        )?;
+
+        virgil.listen(&mut transcript)?;
+
+        dbg!(transcript);
+
+        Ok(())
     }
 }
