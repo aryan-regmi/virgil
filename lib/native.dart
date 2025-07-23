@@ -8,14 +8,21 @@ import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart';
 
 /// The Rust library for communication.
-final _lib = DynamicLibrary.open('libnative.so');
-// final _lib = DynamicLibrary.open(
-//   'native/target/release/libnative.so',
-// ); // FOR LINUX ONLY
+// final _lib = DynamicLibrary.open('libnative.so');
+final _lib = DynamicLibrary.open(
+  'native/target/release/libnative.so',
+); // FOR LINUX ONLY
 
 // ==================================================================
 // TESTING
 // ==================================================================
+
+typedef ListenToMicNativeFn = Void Function();
+typedef ListenToMicFn = void Function();
+final listenToMic = _lib.lookupFunction<ListenToMicNativeFn, ListenToMicFn>(
+  'listen_to_mic',
+);
+
 enum MessageStatus { success, error }
 
 class RustMessage implements BincodeCodable {

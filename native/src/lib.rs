@@ -7,7 +7,7 @@ use bincode::{Decode, Encode, decode_from_slice, encode_into_slice};
 
 use crate::{
     messages::{MessageStatus, RustMessage},
-    state::{Context, Virgil},
+    state::Context,
 };
 
 mod messages;
@@ -69,24 +69,28 @@ pub fn start_listening(ctx: *mut ffi::c_void, ctx_len: usize) -> *mut ffi::c_voi
     let model_path_len = ctx.model_path.len();
 
     // Run Virgil
-    let mut virgil = Virgil::new(&ctx.model_path, ctx.wake_words.clone())
-        .map_err(|e| return rust_error(e.to_string()))
-        .unwrap();
+    // let mut virgil = Virgil::new(&ctx.model_path, ctx.wake_words.clone())
+    //     .map_err(|e| return rust_error(e.to_string()))
+    //     .unwrap();
+    // virgil
+    //     .listen()
+    //     .map_err(|e| return rust_error(e.to_string()))
+    //     .unwrap();
+    //
+    // // Update transcript
+    // ctx.transcript = virgil.transcript.clone();
+    //
+    // // Encode context
+    // let extra_byte_len = wake_words_len + model_path_len + ctx.transcript.len();
+    // serialize_message(RustMessage {
+    //     status: MessageStatus::Success,
+    //     byte_len: msg_size::<Context>(extra_byte_len),
+    //     message: serialize_unchecked(ctx, extra_byte_len),
+    // })
+    // .map_err(|e| return rust_error(e.to_string()))
+    // .unwrap()
 
-    virgil
-        .listen(&mut ctx.transcript)
-        .map_err(|e| return rust_error(e.to_string()))
-        .unwrap();
-
-    // Encode context
-    let extra_byte_len = wake_words_len + model_path_len + ctx.transcript.len();
-    serialize_message(RustMessage {
-        status: MessageStatus::Success,
-        byte_len: msg_size::<Context>(extra_byte_len),
-        message: serialize_unchecked(ctx, extra_byte_len),
-    })
-    .map_err(|e| return rust_error(e.to_string()))
-    .unwrap()
+    todo!()
 }
 
 /// Serialize the given message.

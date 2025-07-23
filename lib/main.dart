@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:virgil/native.dart';
 import 'package:virgil/speech_recognition.dart';
 
 void main() {
@@ -35,9 +36,9 @@ class HomePage extends StatefulWidget {
 
 /// The state of the home page.
 class _HomePageState extends State<HomePage> {
-  final SpeechRecognition _speech = SpeechRecognition(
-    wakeWords: ['Hey Virgil', 'Wake'],
-  );
+  // final SpeechRecognition _speech = SpeechRecognition(
+  //   wakeWords: ['Hey Virgil', 'Wake'],
+  // );
 
   @override
   void initState() {
@@ -54,33 +55,33 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    final listenButton = ElevatedButton(
-      onPressed: _speech.isListening
-          ? null
-          : () async => await _speech.startListening(),
-      child: Text('Listen'),
-    );
-    final pauseButton = ElevatedButton(
-      onPressed: _speech.isListening
-          ? () async => await _speech.pauseListening()
-          : null,
-      child: Text('Pause'),
-    );
-    final stopButton = ElevatedButton(
-      onPressed: _speech.isListening
-          ? () async => await _speech.closeListener()
-          : null,
-      child: Text('Stop'),
-    );
-    final restartButton = ElevatedButton(
-      onPressed: _speech.isListening
-          ? null
-          : () async {
-              await _speech.closeListener();
-              await _speech.restartListener();
-            },
-      child: Text('Restart'),
-    );
+    // final listenButton = ElevatedButton(
+    //   onPressed: _speech.isListening
+    //       ? null
+    //       : () async => await _speech.startListening(),
+    //   child: Text('Listen'),
+    // );
+    // final pauseButton = ElevatedButton(
+    //   onPressed: _speech.isListening
+    //       ? () async => await _speech.pauseListening()
+    //       : null,
+    //   child: Text('Pause'),
+    // );
+    // final stopButton = ElevatedButton(
+    //   onPressed: _speech.isListening
+    //       ? () async => await _speech.closeListener()
+    //       : null,
+    //   child: Text('Stop'),
+    // );
+    // final restartButton = ElevatedButton(
+    //   onPressed: _speech.isListening
+    //       ? null
+    //       : () async {
+    //           await _speech.closeListener();
+    //           await _speech.restartListener();
+    //         },
+    //   child: Text('Restart'),
+    // );
 
     return Scaffold(
       appBar: AppBar(
@@ -91,11 +92,20 @@ class _HomePageState extends State<HomePage> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
-            listenButton,
-            pauseButton,
-            stopButton,
-            restartButton,
-            Text(_speech.transcript),
+            ElevatedButton(
+              onPressed: () async {
+                while (true) {
+                  listenToMic();
+                  await Future.delayed(Duration(seconds: 2));
+                }
+              },
+              child: Text('Listen'),
+            ),
+            // listenButton,
+            // pauseButton,
+            // stopButton,
+            // restartButton,
+            // Text(_speech.transcript),
           ],
         ),
       ),
