@@ -21,7 +21,8 @@ android {
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.example.virgil"
-        minSdk = 24
+        // minSdk = 24
+        minSdk = 26
         targetSdk = flutter.targetSdkVersion
         
         versionCode = flutter.versionCode

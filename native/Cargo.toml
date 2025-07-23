@@ -8,7 +8,5 @@ crate-type = ["cdylib"]
 
 [dependencies]
 bincode = { version = "2.0.1" }
-cpal = "0.16.0"
-crossbeam-channel = "0.5.15"
+tinyaudio = "1.1.0"
 whisper-rs = { version = "0.14.3", features = ["tracing_backend"] }
-# openssl = { version = "0.10.73", features = ["vendored"] }
