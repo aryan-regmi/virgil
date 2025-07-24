@@ -183,7 +183,7 @@ final listenForWakeWords = _lib
 /// @param ctxLen The length of the context (in bytes).
 /// @param miliSeconds The number of miliseconds to listen for.
 ///
-/// @returns `true` if wake word was detected.
+/// @returns The `context` with the updated transcript.
 ///
 /// #Note
 /// This should be called **after** [listenForWakeWords] returns `true`.

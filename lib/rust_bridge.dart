@@ -35,7 +35,7 @@ Future<Context> initalizeContext({
   var wakeWordsBytes = wakeWordsPtr.asTypedList(wakeWordsEncoded.length);
   wakeWordsBytes.setAll(0, wakeWordsEncoded);
 
-  // Create context in Rust
+  // Call Rust func to create pointer
   final ctxPtr = initContext(
     modelPathPtr.cast(),
     modelPathBytes.length,
@@ -54,6 +54,67 @@ Future<Context> initalizeContext({
   _freeAllocs(dartAllocs: dartAllocs, nativeAllocs: nativeAllocs);
 
   return ctx;
+}
+
+/// Detects for wake words.
+Future<bool> detectWakeWords(Context ctx, int listenDurationMs) async {
+  // Encode arguments
+  final ctxEncoded = BincodeWriter.encode(ctx);
+
+  // Allocate memory to send to Rust
+  final ctxPtr = calloc.allocate<Uint8>(ctxEncoded.length);
+  final dartAllocs = [ctxPtr];
+
+  // Copy encoded message over
+  var ctxBytes = ctxPtr.asTypedList(ctxEncoded.length);
+  ctxBytes.setAll(0, ctxEncoded);
+
+  // Call Rust func to detect wake words
+  final detected = listenForWakeWords(
+    ctxPtr.cast(),
+    ctxEncoded.length,
+    listenDurationMs,
+  );
+
+  // Free allocations
+  _freeAllocs(dartAllocs: dartAllocs, nativeAllocs: {});
+
+  return detected;
+}
+
+Future<Context> activeListeningMode(Context ctx, int listenDurationMs) async {
+  // Encode arguments
+  final ctxEncoded = BincodeWriter.encode(ctx);
+
+  // Allocate memory to send to Rust
+  final ctxPtr = calloc.allocate<Uint8>(ctxEncoded.length);
+  final ctxLenOutPtr = calloc.allocate<UintPtr>(sizeOf<UintPtr>());
+  final dartAllocs = [ctxPtr, ctxLenOutPtr];
+
+  // Copy encoded message over
+  var ctxBytes = ctxPtr.asTypedList(ctxEncoded.length);
+  ctxBytes.setAll(0, ctxEncoded);
+
+  final updatedCtxPtr = listenForCommands(
+    ctxPtr.cast(),
+    ctxEncoded.length,
+    listenDurationMs,
+    ctxLenOutPtr,
+  );
+  final nativeAllocs = {(updatedCtxPtr, ctxLenOutPtr.value)};
+
+  // Decode and return response
+  final updatedCtxBytesPtr = updatedCtxPtr.cast<Uint8>();
+  final updatedCtxBytes = updatedCtxBytesPtr.asTypedList(ctxLenOutPtr.value);
+  final updatedCtxDecoded = BincodeReader.decode(
+    updatedCtxBytes,
+    Context.empty(),
+  );
+
+  // Free allocations
+  _freeAllocs(dartAllocs: dartAllocs, nativeAllocs: nativeAllocs);
+
+  return updatedCtxDecoded;
 }
 
 /// Frees the defined allocations.
