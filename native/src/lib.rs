@@ -1,9 +1,10 @@
-use std::{ffi, ptr::slice_from_raw_parts_mut, sync::mpsc, thread, time::Duration};
+use std::{ffi, ptr::slice_from_raw_parts_mut, time::Duration};
 
 use cpal::{
-    InputCallbackInfo,
+    InputCallbackInfo, SampleRate,
     traits::{DeviceTrait, HostTrait, StreamTrait},
 };
+use tokio::time::Instant;
 use whisper_rs::{
     FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters, WhisperState,
     install_logging_hooks,
@@ -66,155 +67,6 @@ pub fn init_context(
         .unwrap()
 }
 
-/// Listens for wake words.
-#[unsafe(no_mangle)]
-pub fn listen_for_wake_words(ctx: *mut ffi::c_void, ctx_len: usize, miliseconds: usize) -> bool {
-    // Decode context
-    let ctx: Context = deserialize(ctx, ctx_len)
-        .map_err(|e| eprintln!("{e}"))
-        .unwrap();
-    let wake_words = ctx.wake_words.clone();
-
-    // Initialize `Whisper` model
-    let model_ctx =
-        WhisperContext::new_with_params(&ctx.model_path, WhisperContextParameters::default())
-            .map_err(|e| eprintln!("{e}"))
-            .unwrap();
-    let params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
-    let mut model = model_ctx
-        .create_state()
-        .map_err(|e| eprintln!("{e}"))
-        .unwrap();
-
-    // Initialize microphone
-    let host = cpal::default_host();
-    let input_device = host
-        .default_input_device()
-        .ok_or_else(|| "Default input device not found".to_string())
-        .unwrap();
-    let config = input_device.default_input_config().unwrap().config();
-
-    // Setup channels for communication w/ threads
-    let (tx, rx) = mpsc::channel::<Vec<f32>>();
-    let (detect_tx, detect_rx) = mpsc::channel::<bool>();
-
-    // Initialize input stream (microphone)
-    let input_callback = move |data: &[f32], _: &InputCallbackInfo| {
-        tx.send(data.into()).unwrap();
-    };
-    let input_stream = input_device
-        .build_input_stream(&config, input_callback, |err| eprintln!("{err}"), None)
-        .map_err(|e| eprintln!("{e}"))
-        .unwrap();
-
-    // Start stream and process data in thread.
-    input_stream.play().map_err(|e| eprintln!("{e}")).unwrap();
-    let _handle = thread::spawn(move || {
-        let mut accumulated_data = Vec::<f32>::with_capacity(EXPECTED_SAMPLE_RATE);
-        while let Ok(data) = rx.recv() {
-            accumulated_data.extend_from_slice(&data);
-        }
-
-        dbg!("THERE");
-
-        // Check for wake words
-        let wake_word_detected =
-            detect_wake_words(&mut model, params.clone(), &wake_words, &accumulated_data)
-                .map_err(|e| eprintln!("{e}"))
-                .unwrap();
-        dbg!("HERE");
-        detect_tx
-            .send(wake_word_detected)
-            .map_err(|e| eprintln!("{e}"))
-            .unwrap();
-    });
-
-    // Listen for specified duration
-    std::thread::sleep(Duration::from_millis(miliseconds as u64));
-
-    let out = detect_rx.try_recv().unwrap_or_else(|_| false);
-    // _handle.join().map_err(|e| eprintln!("{e:?}")).unwrap();
-    out
-}
-
-/// Listens for commands.
-///
-/// This should be called after [listen_for_wake_word] to actively listen for a longer duration.
-#[unsafe(no_mangle)]
-pub fn listen_for_commands(
-    ctx: *mut ffi::c_void,
-    ctx_len: usize,
-    miliseconds: usize,
-    ctx_len_out: *mut usize,
-) -> *mut ffi::c_void {
-    // Decode context
-    let mut ctx: Context = deserialize(ctx, ctx_len)
-        .map_err(|e| eprintln!("{e}"))
-        .unwrap();
-
-    // Initialize `Whisper` model
-    let model_ctx =
-        WhisperContext::new_with_params(&ctx.model_path, WhisperContextParameters::default())
-            .map_err(|e| eprintln!("{e}"))
-            .unwrap();
-    let params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
-    let mut model = model_ctx
-        .create_state()
-        .map_err(|e| eprintln!("{e}"))
-        .unwrap();
-
-    // Initialize microphone
-    let host = cpal::default_host();
-    let input_device = host
-        .default_input_device()
-        .ok_or_else(|| "Default input device not found".to_string())
-        .unwrap();
-    let config = input_device.default_input_config().unwrap().config();
-
-    // Setup channels for communication w/ threads
-    let (tx, rx) = mpsc::channel::<Vec<f32>>();
-    let (transcript_tx, transcript_rx) = mpsc::channel::<String>();
-
-    // Initialize input stream (microphone)
-    let input_callback = move |data: &[f32], _: &InputCallbackInfo| {
-        tx.send(data.into()).unwrap();
-    };
-    let input_stream = input_device
-        .build_input_stream(&config, input_callback, |err| eprintln!("{err}"), None)
-        .map_err(|e| eprintln!("{e}"))
-        .unwrap();
-
-    // Start stream and process data in thread.
-    input_stream.play().map_err(|e| eprintln!("{e}")).unwrap();
-    thread::spawn(move || {
-        let mut accumulated_data = Vec::<f32>::with_capacity(EXPECTED_SAMPLE_RATE);
-        while let Ok(data) = rx.recv() {
-            accumulated_data.extend_from_slice(&data);
-        }
-
-        // Transcribe accumulated data
-        let transcript = transcribe(&mut model, params, &accumulated_data)
-            .map_err(|e| eprintln!("{e}"))
-            .unwrap();
-        transcript_tx
-            .send(transcript)
-            .map_err(|e| eprintln!("{e}"))
-            .unwrap();
-    });
-
-    // Listen for specified duration
-    std::thread::sleep(Duration::from_millis(miliseconds as u64));
-
-    // Return updated context
-    let mut transcript = String::with_capacity(1024);
-    let text = transcript_rx.try_recv().unwrap_or_else(|_| String::new());
-    transcript.push_str(&text);
-    ctx.transcript = transcript;
-    serialize(ctx, ctx_len_out)
-        .map_err(|e| eprintln!("{e}"))
-        .unwrap()
-}
-
 /// Checks for wake words in audio data.
 fn detect_wake_words(
     model: &mut WhisperState,
@@ -223,8 +75,6 @@ fn detect_wake_words(
     audio_data: &[f32],
 ) -> VirgilResult<bool> {
     let transcript = transcribe(model, params, audio_data)?.to_lowercase();
-
-    dbg!("INSEIDE");
 
     for word in wake_words {
         if transcript.contains(&word.to_lowercase()) {
@@ -249,6 +99,123 @@ fn transcribe(
         transcript.push_str(&segment);
     }
     Ok(transcript)
+}
+
+// FIXME: Change to be actual listener!
+#[unsafe(no_mangle)]
+pub async fn test_listen(ctx: *mut ffi::c_void, ctx_len: usize, miliseconds: usize) {
+    let (audio_data_tx, mut audio_data_rx) =
+        tokio::sync::mpsc::channel::<Vec<f32>>(EXPECTED_SAMPLE_RATE);
+
+    // Decode context
+    let ctx: Context = deserialize(ctx, ctx_len)
+        .map_err(|e| eprintln!("{e}"))
+        .unwrap();
+    let wake_words = ctx.wake_words.clone();
+
+    // Initialize `Whisper` model
+    let model_ctx =
+        WhisperContext::new_with_params(&ctx.model_path, WhisperContextParameters::default())
+            .map_err(|e| eprintln!("{e}"))
+            .unwrap();
+    let params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
+    let mut model = model_ctx
+        .create_state()
+        .map_err(|e| eprintln!("{e}"))
+        .unwrap();
+
+    // Spawn task to listen to microphone and capture audio data
+    tokio::spawn(async move {
+        // Initialize microphone
+        let host = cpal::default_host();
+        let input_device = host
+            .default_input_device()
+            .ok_or_else(|| "Default input device not found".to_string())
+            .unwrap();
+        let config = input_device
+            .supported_input_configs()
+            .unwrap()
+            .next()
+            .unwrap()
+            .with_sample_rate(SampleRate(EXPECTED_SAMPLE_RATE as u32))
+            .config();
+
+        // Initialize input stream (microphone)
+        let stream = input_device
+            .build_input_stream(
+                &config,
+                move |data: &[f32], _: &InputCallbackInfo| {
+                    let num_channels = config.channels as usize;
+                    if num_channels > 1 {
+                        // TODO: Split audio channels!
+                        let channels = data.chunks_exact(num_channels);
+                        for channel_audio in channels {
+                            audio_data_tx.try_send(channel_audio.into()).unwrap()
+                        }
+                    } else {
+                        audio_data_tx.try_send(data.into()).unwrap()
+                    }
+                },
+                |err| eprintln!("{err}"),
+                None,
+            )
+            .map_err(|e| eprintln!("{e}"))
+            .unwrap();
+
+        // Start the stream
+        stream.play().map_err(|e| eprintln!("{e}")).unwrap();
+
+        // Keep the stream alive
+        loop {
+            tokio::time::sleep(Duration::from_millis(miliseconds as u64)).await
+        }
+    });
+
+    // TODO: Merge channels?
+    //
+    // Accumulate audio data until sample is large enough
+    let (audio_tx, mut audio_rx) = tokio::sync::mpsc::channel::<Vec<f32>>(EXPECTED_SAMPLE_RATE);
+    tokio::spawn(async move {
+        let mut accumulated_data = Vec::with_capacity(EXPECTED_SAMPLE_RATE);
+        while let Some(data) = audio_data_rx.recv().await {
+            accumulated_data.extend_from_slice(&data);
+
+            if accumulated_data.len() >= EXPECTED_SAMPLE_RATE {
+                audio_tx.send(accumulated_data.clone()).await.unwrap();
+                accumulated_data.clear();
+            }
+        }
+    });
+
+    // Process data
+    let start_time = Instant::now();
+    let timeout = Duration::from_millis(miliseconds as u64);
+    let mut transcript = String::with_capacity(1024);
+    loop {
+        if start_time.elapsed() > timeout {
+            println!("Timed out");
+            break;
+        }
+
+        if let Some(audio_data) = audio_rx.recv().await {
+            // Check for wake words
+            let wake_word_detected =
+                detect_wake_words(&mut model, params.clone(), &wake_words, &audio_data)
+                    .map_err(|e| eprintln!("{e}"))
+                    .unwrap();
+
+            if wake_word_detected {
+                println!("Wake word detected!");
+            }
+
+            // Transcript
+            let text = transcribe(&mut model, params.clone(), &audio_data)
+                .map_err(|e| eprintln!("{e}"))
+                .unwrap();
+            transcript.push_str(text.trim());
+        }
+    }
+    dbg!(transcript);
 }
 
 #[cfg(test)]
@@ -281,25 +248,10 @@ mod tests {
         Ok((ctx, ctx_len))
     }
 
-    #[test]
-    fn wake_word_listener() -> VirgilResult<()> {
+    #[tokio::test]
+    async fn test_listenr() -> VirgilResult<()> {
         let (ctx, ctx_len) = get_context()?;
-        let detected = listen_for_wake_words(ctx, ctx_len, 500);
-        dbg!(detected);
-
-        Ok(())
-    }
-
-    #[ignore]
-    #[test]
-    fn active_listener() -> VirgilResult<()> {
-        let (ctx, ctx_len) = get_context()?;
-        let out_len: usize = 0;
-        let len_out = (&out_len as *const usize).cast_mut();
-        let ctx = listen_for_commands(ctx, ctx_len, 5000, len_out);
-        let ctx: Context = deserialize(ctx, ctx_len)?;
-        dbg!(ctx.transcript);
-
+        test_listen(ctx, ctx_len, 1000).await;
         Ok(())
     }
 }
