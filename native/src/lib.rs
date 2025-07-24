@@ -21,12 +21,12 @@ const EXPECTED_SAMPLE_RATE: usize = 16_000;
 
 /// Frees the memory allocated by Rust.
 #[unsafe(no_mangle)]
-pub fn free_rust_ptr(ptr: *const ffi::c_void, len: usize) {
+pub fn free_rust_ptr(ptr: *mut ffi::c_void, len: usize) {
     if ptr.is_null() {
         return;
     }
     unsafe {
-        let ptr: *mut u8 = ptr.cast_mut().cast();
+        let ptr: *mut u8 = ptr.cast();
         let _ = Box::from_raw(slice_from_raw_parts_mut(ptr, len));
     }
 }
@@ -34,9 +34,9 @@ pub fn free_rust_ptr(ptr: *const ffi::c_void, len: usize) {
 /// Initalizes the application context.
 #[unsafe(no_mangle)]
 pub fn init_context(
-    model_path: *const ffi::c_void,
+    model_path: *mut ffi::c_void,
     model_path_len: usize,
-    wake_words: *const ffi::c_void,
+    wake_words: *mut ffi::c_void,
     wake_words_len: usize,
     msg_len_out: *mut usize,
 ) -> *mut ffi::c_void {
@@ -44,6 +44,7 @@ pub fn init_context(
     let model_path: String = deserialize(model_path, model_path_len)
         .map_err(|e| eprintln!("{e}"))
         .unwrap();
+
     let wake_words: Vec<String> = deserialize(wake_words, wake_words_len)
         .map_err(|e| eprintln!("{e}"))
         .unwrap();

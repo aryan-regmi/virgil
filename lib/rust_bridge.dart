@@ -1,16 +1,14 @@
 /// Contains functions and classes responsible for communicating with Rust.
 library;
 
-import 'dart:convert';
 import 'dart:ffi';
 
 import 'package:d_bincode/d_bincode.dart';
 import 'package:ffi/ffi.dart';
-import 'package:flutter/foundation.dart';
 import 'package:logger/logger.dart';
 import 'package:virgil/native.dart';
 
-final _logger = Logger(level: Level.info);
+final _logger = Logger(level: Level.debug);
 
 // TODO: Use writer/reader pools!
 
@@ -20,9 +18,9 @@ Future<Context> initalizeContext({
   required List<String> wakeWords,
 }) async {
   // Encode arguments
-  final modelPathEncoded = utf8.encode(modelPath);
-  final wakeWordsEncoded = Uint8List.fromList(
-    wakeWords.map((e) => utf8.encode(e)).expand((l) => l).toList(),
+  final modelPathEncoded = BincodeWriter.encode(ModelPath(path: modelPath));
+  final wakeWordsEncoded = BincodeWriter.encode(
+    WakeWords(wakeWords: wakeWords),
   );
 
   // Allocate memory to send to Rust
@@ -42,21 +40,23 @@ Future<Context> initalizeContext({
   wakeWordsBytes.setAll(0, wakeWordsEncoded);
 
   // Create context in Rust
-  final ctxPtr = initContext(
+  final msgPtr = initContext(
     modelPathPtr.cast(),
-    modelPathEncoded.length,
+    modelPathBytes.length,
     wakeWordsPtr.cast(),
-    wakeWordsEncoded.length,
+    wakeWordsBytes.length,
     msgLenOutPtr,
   );
   final nativeAllocs = {
-    (ctxPtr, msgLenOutPtr.value),
+    (msgPtr, msgLenOutPtr.value),
   }; // FIXME: Func to free at once
 
   // Decode and return response
-  final msgBytesPtr = ctxPtr.cast<Uint8>();
+  final msgBytesPtr = msgPtr.cast<Uint8>();
   final msgBytes = msgBytesPtr.asTypedList(msgLenOutPtr.value);
+
   final msg = BincodeReader.decode(msgBytes, RustMessage.empty());
+
   final ctx = BincodeReader.decode(msg.message, Context.empty());
 
   // Free allocations

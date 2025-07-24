@@ -77,6 +77,42 @@ class Context implements BincodeCodable {
   }
 }
 
+class ModelPath implements BincodeCodable {
+  ModelPath({required this.path});
+
+  ModelPath.empty() : path = '';
+
+  String path;
+
+  @override
+  void decode(BincodeReader reader) {
+    path = reader.readString();
+  }
+
+  @override
+  void encode(BincodeWriter writer) {
+    writer.writeString(path);
+  }
+}
+
+class WakeWords implements BincodeCodable {
+  WakeWords({required this.wakeWords});
+
+  WakeWords.empty() : wakeWords = [];
+
+  List<String> wakeWords;
+
+  @override
+  void decode(BincodeReader reader) {
+    wakeWords = reader.readList(reader.readString);
+  }
+
+  @override
+  void encode(BincodeWriter writer) {
+    writer.writeList(wakeWords, writer.writeString);
+  }
+}
+
 // ==================================================================
 // Function types
 // ==================================================================

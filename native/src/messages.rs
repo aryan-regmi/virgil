@@ -20,6 +20,9 @@ impl TryFrom<u8> for MessageStatus {
     }
 }
 
+// FIXME: Remove [RustMessage], and replace with direct types:
+//  - Impl `Message` trait that returns the byte_len of each type
+//
 /// Represents a message sent **from** Rust **to** Dart.
 #[derive(Debug, Encode, Decode)]
 pub struct RustMessage {

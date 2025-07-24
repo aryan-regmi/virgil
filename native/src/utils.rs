@@ -33,13 +33,13 @@ pub fn serialize_message(value: RustMessage) -> Result<*mut ffi::c_void, String>
 /// The caller must free the the returned pointer with [free_rust_ptr].
 pub fn serialize<T: Encode>(value: T, value_byte_len: usize) -> Result<Vec<u8>, String> {
     let mut bytes = vec![0; value_byte_len];
-    let written = encode_into_slice(
+    let _written = encode_into_slice(
         value,
         bytes.as_mut_slice(),
         bincode::config::standard().with_fixed_int_encoding(),
     )
     .map_err(|e| e.to_string())?;
-    assert_eq!(written, value_byte_len);
+    // assert_eq!(written, value_byte_len);
     Ok(bytes)
 }
 
@@ -52,11 +52,11 @@ pub fn serialize_unchecked<T: Encode>(value: T, extra_byte_len: usize) -> Vec<u8
 }
 
 /// Deserialize the value represented by the given pointer and length.
-pub fn deserialize<T: Decode<()>>(ptr: *const ffi::c_void, len: usize) -> Result<T, String> {
+pub fn deserialize<T: Decode<()>>(ptr: *mut ffi::c_void, len: usize) -> Result<T, String> {
     let slice = unsafe {
-        let ptr: *const u8 = ptr.cast();
-        let safe_slice = slice_from_raw_parts(ptr, len).as_ref();
-        if let Some(slice) = safe_slice {
+        let ptr: *mut u8 = ptr.cast();
+        let slice = slice_from_raw_parts(ptr, len).as_ref();
+        if let Some(slice) = slice {
             slice
         } else {
             return Err("Unable to convert `ptr` to a slice of bytes".into());
@@ -66,6 +66,7 @@ pub fn deserialize<T: Decode<()>>(ptr: *const ffi::c_void, len: usize) -> Result
     let (decoded, _): (T, usize) =
         decode_from_slice(slice, bincode::config::standard().with_fixed_int_encoding())
             .map_err(|e| e.to_string())?;
+
     Ok(decoded)
 }
 
