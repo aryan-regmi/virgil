@@ -4,7 +4,6 @@ library;
 import 'dart:ffi';
 
 import 'package:d_bincode/d_bincode.dart';
-import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart';
 
 /// The Rust library for communication.
@@ -25,6 +24,7 @@ class RustMessage implements BincodeCodable {
     required this.byteLen,
     required this.message,
   });
+
   RustMessage.empty()
     : status = MessageStatus.success,
       byteLen = 0,
@@ -49,184 +49,136 @@ class RustMessage implements BincodeCodable {
   }
 }
 
-// ==================================================================
-// Native `Response` types
-// ==================================================================
+class Context implements BincodeCodable {
+  Context({
+    required this.modelPath,
+    required this.wakeWords,
+    required this.transcript,
+  });
 
-// NOTE: This must be kept in sync with Rust's `ResponseType`.
-//
-/// The response type sent from Rust.
-enum ResponseType { text, wakeWord, error }
+  Context.empty() : modelPath = '', wakeWords = [], transcript = '';
 
-abstract class RustResponse<T> implements BincodeCodable {
-  ResponseType get kind;
-  T get value;
-
-  /// Returns the `value` of the response, or throws an exception if the response type is `RustResponse.error`.
-  T unwrap() {
-    if (kind == ResponseType.error) {
-      throw Exception("Rust error: $value");
-    }
-    return value;
-  }
-}
-
-class TextResponse extends RustResponse<String> {
-  String text;
-
-  TextResponse(this.text);
-  TextResponse.empty() : text = '';
+  String modelPath;
+  List<String> wakeWords;
+  String transcript;
 
   @override
   void decode(BincodeReader reader) {
-    text = reader.readString();
+    modelPath = reader.readString();
+    wakeWords = reader.readList(reader.readString);
+    transcript = reader.readString();
   }
 
   @override
   void encode(BincodeWriter writer) {
-    writer.writeString(text);
+    writer.writeString(modelPath);
+    writer.writeList(wakeWords, writer.writeString);
+    writer.writeString(transcript);
   }
-
-  @override
-  ResponseType get kind => ResponseType.text;
-
-  @override
-  String get value => text;
-}
-
-class WakeWordDetection implements BincodeCodable {
-  bool detected;
-  int startIdx = -1;
-  int endIdx = -1;
-
-  WakeWordDetection(this.detected);
-  WakeWordDetection.empty() : detected = false;
-
-  @override
-  void decode(BincodeReader reader) {
-    detected = reader.readBool();
-    startIdx = reader.readU64();
-    endIdx = reader.readU64();
-  }
-
-  @override
-  void encode(BincodeWriter writer) {
-    writer.writeBool(detected);
-    writer.writeU64(startIdx);
-    writer.writeU64(endIdx);
-  }
-}
-
-class WakeWordResponse extends RustResponse<WakeWordDetection> {
-  WakeWordDetection detection;
-
-  WakeWordResponse(this.detection);
-  WakeWordResponse.empty() : detection = WakeWordDetection.empty();
-
-  @override
-  void decode(BincodeReader reader) {
-    detection = reader.readNestedObjectForFixed(WakeWordDetection.empty());
-  }
-
-  @override
-  void encode(BincodeWriter writer) {
-    writer.writeNestedValueForFixed(detection);
-  }
-
-  @override
-  ResponseType get kind => ResponseType.wakeWord;
-
-  @override
-  WakeWordDetection get value => detection;
-}
-
-class ErrorResponse extends RustResponse<String> {
-  String text;
-
-  ErrorResponse(this.text);
-  ErrorResponse.empty() : text = '';
-
-  @override
-  void decode(BincodeReader reader) {
-    text = reader.readString();
-  }
-
-  @override
-  void encode(BincodeWriter writer) {
-    writer.writeString(text);
-  }
-
-  @override
-  ResponseType get kind => ResponseType.error;
-
-  @override
-  String get value => text;
 }
 
 // ==================================================================
 // Function types
 // ==================================================================
 
-typedef ListenToMicNativeFn = Void Function();
-typedef ListenToMicFn = void Function();
-final listenToMic = _lib.lookupFunction<ListenToMicNativeFn, ListenToMicFn>(
-  'listen_to_mic',
-);
+// fn free_rust_ptr(ptr: *const ffi::c_void, len: usize)
+typedef _FreeRustPtrNativeFn = Void Function(Pointer<Void> ptr, UintPtr len);
+typedef _FreeRustPtrFn = void Function(Pointer<Void> ptr, int len);
 
-// pub fn listen_for_wake_word(ctx: *mut ffi::c_void, ctx_len: usize, miliseconds: usize) -> bool {
-
-// fn send_message_to_rust(
-//     msg_type: u8,
-//     msg_ptr: *const ffi::c_void,
-//     msg_len: usize,
-//     resp_type: *mut u8,
-//     resp_len: *mut usize,
+// fn init_context(
+//     model_path: *const ffi::c_void,
+//     model_path_len: usize,
+//     wake_words: *const ffi::c_void,
+//     wake_words_len: usize,
+//     msg_len_out: *mut usize,
 // ) -> *mut ffi::c_void
-typedef _SendMessageToRustNativeFn =
+typedef _InitContextNativeFn =
     Pointer<Void> Function(
-      Uint8 msgType,
-      Pointer<Void> msgPtr,
-      UintPtr msgLen,
-      Pointer<Uint8> respTypeOut,
-      Pointer<UintPtr> respLenOut,
+      Pointer<Void> modelPath,
+      UintPtr modelPathLen,
+      Pointer<Void> wakeWords,
+      UintPtr wakeWordsLen,
+      Pointer<UintPtr> msgLenOut,
     );
-typedef _SendMessageToRustFn =
+typedef _InitContextFn =
     Pointer<Void> Function(
-      int msgType,
-      Pointer<Void> msgPtr,
-      int msgLen,
-      Pointer<Uint8> respTypeOut,
-      Pointer<UintPtr> respLenOut,
+      Pointer<Void> modelPath,
+      int modelPathLen,
+      Pointer<Void> wakeWords,
+      int wakeWordsLen,
+      Pointer<UintPtr> msgLenOut,
     );
 
-// fn free_response(ptr: *const ffi::c_void, len: usize)
-typedef _FreeResponseNativeFn = Void Function(Pointer<Void> ptr, UintPtr len);
-typedef _FreeResponseFn = void Function(Pointer<Void> ptr, int len);
+// fn listen_for_wake_word(ctx: *mut ffi::c_void, ctx_len: usize, miliseconds: usize) -> bool
+typedef _ListenForWakeWordNativeFn =
+    Bool Function(Pointer<Void> ctx, UintPtr ctxLen, UintPtr miliseconds);
+typedef _ListenForWakeWordFn =
+    bool Function(Pointer<Void> ctx, int ctxLen, int miliseconds);
+
+// fn listen_for_commands(
+//     ctx: *mut ffi::c_void,
+//     ctx_len: usize,
+//     miliseconds: usize,
+// ) -> *mut ffi::c_void
+typedef _ListenForCommandsNativeFn =
+    Pointer<Void> Function(
+      Pointer<Void> ctx,
+      UintPtr ctxLen,
+      UintPtr miliseconds,
+    );
+typedef _ListenForCommandsFn =
+    Pointer<Void> Function(Pointer<Void> ctx, int ctxLen, int miliseconds);
 
 // ==================================================================
 // Function Bindings
 // ==================================================================
 
-/// Sends the specified message *to* Rust *from* Dart.
+/// Frees the pointer allocated in Rust.
 ///
-/// @param msgType The type of the message.
-/// @param msgPtr The actual message.
-/// @param msgLen The length of the message (in bytes).
-/// @param respTypeOut The type of the response from Rust.
-/// @param respLenOut The length of the response (in bytes).
+/// @param ptr A Rust pointer.
+/// @param len The length of the pointer's contents (in bytes).
+final freeRustPtr = _lib.lookupFunction<_FreeRustPtrNativeFn, _FreeRustPtrFn>(
+  'free_rust_ptr',
+);
+
+/// Initalizes the application context.
 ///
-/// @returns A pointer to a `Response` object.
+/// @param modelPath The path of the `Whisper` model.
+/// @param modelPathLen The length of the model path (in bytes).
+/// @param wakeWords A list of wake words.
+/// @param wakeWordsLen The length of the wake words (in bytes).
+///
+/// @returns A pointer to a `Context` object.
 ///
 /// # Note
 /// The returned pointer must be deallocated using the [freeResponseNative] function.
-final sendMessageToRustNative = _lib
-    .lookupFunction<_SendMessageToRustNativeFn, _SendMessageToRustFn>(
-      'send_message_to_rust',
+final initContext = _lib.lookupFunction<_InitContextNativeFn, _InitContextFn>(
+  'init_context',
+);
+
+/// Listens for wake words.
+///
+/// @param ctx The application `Context`.
+/// @param ctxLen The length of the context (in bytes).
+/// @param miliSeconds The number of miliseconds to listen for.
+///
+/// @returns `true` if wake word was detected.
+final listenForWakeWords = _lib
+    .lookupFunction<_ListenForWakeWordNativeFn, _ListenForWakeWordFn>(
+      'listen_for_wake_words',
     );
 
-/// Frees the response returned by the [sendMessageToRustNative] function.
+/// Listens for commands.
 ///
-/// @param ptr A pointer to the Rust `Response`.
-/// @param len The length of the response (in bytes).
-final freeResponseNative = _lib
-    .lookupFunction<_FreeResponseNativeFn, _FreeResponseFn>('free_response');
+/// @param ctx The application `Context`.
+/// @param ctxLen The length of the context (in bytes).
+/// @param miliSeconds The number of miliseconds to listen for.
+///
+/// @returns `true` if wake word was detected.
+///
+/// #Note
+/// This should be called **after** [listenForWakeWords] returns `true`.
+final listenForCommands = _lib
+    .lookupFunction<_ListenForCommandsNativeFn, _ListenForCommandsFn>(
+      'listen_for_commands',
+    );

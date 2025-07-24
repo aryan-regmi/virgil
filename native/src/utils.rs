@@ -69,6 +69,7 @@ pub fn deserialize<T: Decode<()>>(ptr: *const ffi::c_void, len: usize) -> Result
     Ok(decoded)
 }
 
+#[allow(dead_code)]
 /// Returns a string containing error info.
 pub fn rust_error(details: String) -> *mut ffi::c_void {
     let extra_byte_len = details.len();

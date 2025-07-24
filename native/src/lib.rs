@@ -10,16 +10,11 @@ use whisper_rs::{
 
 use crate::{
     messages::{MessageStatus, RustMessage},
-    utils::{
-        Context, VirgilResult, deserialize, msg_size, rust_error, serialize_message,
-        serialize_unchecked,
-    },
+    utils::{Context, VirgilResult, deserialize, msg_size, serialize_message, serialize_unchecked},
 };
 
 mod messages;
 mod utils;
-
-// TODO: Replace `rust_error` with `eprintln!()`
 
 /// The expected sample rate and buffer size.
 const EXPECTED_SAMPLE_RATE: usize = 16_000;
@@ -43,13 +38,14 @@ pub fn init_context(
     model_path_len: usize,
     wake_words: *const ffi::c_void,
     wake_words_len: usize,
+    msg_len_out: *mut usize,
 ) -> *mut ffi::c_void {
     // Decode model path and wake words
     let model_path: String = deserialize(model_path, model_path_len)
-        .map_err(|e| return rust_error(e.to_string()))
+        .map_err(|e| eprintln!("{e}"))
         .unwrap();
     let wake_words: Vec<String> = deserialize(wake_words, wake_words_len)
-        .map_err(|e| return rust_error(e.to_string()))
+        .map_err(|e| eprintln!("{e}"))
         .unwrap();
 
     // Encode context
@@ -60,18 +56,19 @@ pub fn init_context(
         transcript: String::with_capacity(transcript_capacity),
     };
     let extra_byte_len = wake_words_len + model_path_len + transcript_capacity;
+    unsafe { *msg_len_out = msg_size::<Context>(extra_byte_len) };
     serialize_message(RustMessage {
         status: MessageStatus::Success,
         byte_len: msg_size::<Context>(extra_byte_len),
         message: serialize_unchecked(ctx, extra_byte_len),
     })
-    .map_err(|e| return rust_error(e.to_string()))
+    .map_err(|e| eprintln!("{e}"))
     .unwrap()
 }
 
 /// Listens for wake words.
 #[unsafe(no_mangle)]
-pub fn listen_for_wake_word(ctx: *mut ffi::c_void, ctx_len: usize, miliseconds: usize) -> bool {
+pub fn listen_for_wake_words(ctx: *mut ffi::c_void, ctx_len: usize, miliseconds: usize) -> bool {
     // Decode context
     let ctx: Context = deserialize(ctx, ctx_len)
         .map_err(|e| eprintln!("{e}"))
@@ -227,7 +224,7 @@ pub fn listen_for_commands(
         byte_len: msg_size::<Context>(extra_byte_len),
         message: serialize_unchecked(ctx, extra_byte_len),
     })
-    .map_err(|e| return rust_error(e.to_string()))
+    .map_err(|e| eprintln!("{e}"))
     .unwrap()
 }
 

@@ -1,6 +1,7 @@
 /// Contains functions and classes responsible for communicating with Rust.
 library;
 
+import 'dart:convert';
 import 'dart:ffi';
 
 import 'package:d_bincode/d_bincode.dart';
@@ -13,68 +14,55 @@ final _logger = Logger(level: Level.info);
 
 // TODO: Use writer/reader pools!
 
-/// Sends the given message to Rust in a background isolate and returns its response.
-Future<RustResponse> sendMessage<Message extends DartMessage>({
-  required MessageType messageType,
-  required Message message,
+/// Initalizes the Rust context.
+Future<Context> initalizeContext({
+  required String modelPath,
+  required List<String> wakeWords,
 }) async {
-  var args = {"messageType": messageType, "message": message};
-  return compute(_sendMessage, args);
-}
-
-/// Sends the given message to Rust, and returns its response.
-RustResponse _sendMessage<Message extends DartMessage>(Map args) {
-  final MessageType messageType = args["messageType"];
-  final Message message = args["message"];
-
-  // Encode message
-  late final int msgType = messageType.index;
-  late final Uint8List encodedMessage;
-  if (message.lengthInBytes == 0) {
-    encodedMessage = Uint8List(0); // NOTE: Don't encode ZST messages
-  } else {
-    encodedMessage = BincodeWriter.encode(message);
-  }
-  _logger.d('Message encoded: $message');
+  // Encode arguments
+  final modelPathEncoded = utf8.encode(modelPath);
+  final wakeWordsEncoded = Uint8List.fromList(
+    wakeWords.map((e) => utf8.encode(e)).expand((l) => l).toList(),
+  );
 
   // Allocate memory to send to Rust
-  final msgLen = encodedMessage.length;
-  final msgPtr = calloc.allocate<Uint8>(msgLen);
-  final responseTypePtr = calloc.allocate<Uint8>(sizeOf<Uint8>());
-  final responseLenPtr = calloc.allocate<UintPtr>(sizeOf<UintPtr>());
-  final dartAllocs = [msgPtr, responseTypePtr, responseLenPtr];
-  _logger.d('Allocated memory for Rust methods');
+  final modelPathPtr = calloc.allocate<Uint8>(modelPathEncoded.length);
+  final wakeWordsPtr = calloc.allocate<Uint8>(wakeWordsEncoded.length);
+  final msgLenOutPtr = calloc.allocate<UintPtr>(sizeOf<UintPtr>());
+  final dartAllocs = [
+    modelPathPtr,
+    wakeWordsPtr,
+    msgLenOutPtr,
+  ]; // FIXME: Func to free at once
 
   // Copy encoded message over
-  var msgBytes = msgPtr.asTypedList(msgLen);
-  msgBytes.setAll(0, encodedMessage);
+  var modelPathBytes = modelPathPtr.asTypedList(modelPathEncoded.length);
+  modelPathBytes.setAll(0, modelPathEncoded);
+  var wakeWordsBytes = wakeWordsPtr.asTypedList(wakeWordsEncoded.length);
+  wakeWordsBytes.setAll(0, wakeWordsEncoded);
 
-  // Send to Rust
-  final responsePtr = sendMessageToRustNative(
-    msgType,
-    msgPtr.cast(),
-    msgLen,
-    responseTypePtr,
-    responseLenPtr,
+  // Create context in Rust
+  final ctxPtr = initContext(
+    modelPathPtr.cast(),
+    modelPathEncoded.length,
+    wakeWordsPtr.cast(),
+    wakeWordsEncoded.length,
+    msgLenOutPtr,
   );
-  final nativeAllocs = {(responsePtr, responseLenPtr.value)};
-  _logger.d('Message sent to Rust');
-
-  // Validate response
-  if (responsePtr.address == nullptr.address) {
-    _logger.e('Response from Rust was NULL');
-    return ErrorResponse('Invalid response from Rust');
-  }
+  final nativeAllocs = {
+    (ctxPtr, msgLenOutPtr.value),
+  }; // FIXME: Func to free at once
 
   // Decode and return response
-  _logger.d('Decoding response...');
-  final responseBytesPtr = responsePtr.cast<Uint8>();
-  final responseBytes = responseBytesPtr.asTypedList(responseLenPtr.value);
-  final responseType = ResponseType.values[responseTypePtr.value];
-  _logger.d('Response Type: $responseType');
-  final response = _decodeResponse(responseType, responseBytes);
+  final msgBytesPtr = ctxPtr.cast<Uint8>();
+  final msgBytes = msgBytesPtr.asTypedList(msgLenOutPtr.value);
+  final msg = BincodeReader.decode(msgBytes, RustMessage.empty());
+  final ctx = BincodeReader.decode(msg.message, Context.empty());
+
+  // Free allocations
   _freeAllocs(dartAllocs: dartAllocs, nativeAllocs: nativeAllocs);
-  return response;
+
+  return ctx;
 }
 
 /// Frees the defined allocations.
@@ -89,26 +77,6 @@ void _freeAllocs({
 
   _logger.d('Freeing native allocations');
   for (var info in nativeAllocs) {
-    freeResponseNative(info.$1, info.$2);
-  }
-}
-
-/// Decodes the response into the correct types.
-RustResponse _decodeResponse(ResponseType responseType, Uint8List bytes) {
-  switch (responseType) {
-    case ResponseType.text:
-      final response = BincodeReader.decode(bytes, TextResponse.empty());
-      _logger.d('Decoded response: TextResponse(${response.text})');
-      return response;
-    case ResponseType.wakeWord:
-      final response = BincodeReader.decode(bytes, WakeWordResponse.empty());
-      _logger.d(
-        'Decoded response: WakeWordResponse {\n\tdetected: ${response.detection.detected},\n\tstartIdx: ${response.detection.startIdx},\n\tendIdx: ${response.detection.endIdx} }',
-      );
-      return response;
-    case ResponseType.error:
-      final response = BincodeReader.decode(bytes, ErrorResponse.empty());
-      _logger.d('Decoded response: ErrorResponse(${response.text})');
-      return response;
+    freeRustPtr(info.$1, info.$2);
   }
 }

@@ -1,8 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:virgil/native.dart';
-import 'package:virgil/speech_recognition.dart';
+import 'package:virgil/rust_bridge.dart';
 
 void main() {
   runApp(const Virgil());
@@ -94,12 +93,16 @@ class _HomePageState extends State<HomePage> {
           children: <Widget>[
             ElevatedButton(
               onPressed: () async {
-                while (true) {
-                  listenToMic();
-                  await Future.delayed(Duration(seconds: 2));
-                }
+                await initalizeContext(
+                  modelPath: 'native/test_assets/ggml-tiny.bin',
+                  wakeWords: ['Wake'],
+                );
+                // while (true) {
+                //   listenToMic();
+                //   await Future.delayed(Duration(seconds: 2));
+                // }
               },
-              child: Text('Listen'),
+              child: Text('Init Context'),
             ),
             // listenButton,
             // pauseButton,
