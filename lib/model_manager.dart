@@ -49,7 +49,7 @@ class ModelManager {
     final response = await http.get(Uri.parse(_modelUrl));
     if (response.statusCode == 200) {
       await file.writeAsBytes(response.bodyBytes);
-      _logger.i('Model download to $modelPath');
+      _logger.i('Model downloaded to $modelPath');
       return modelPath;
     } else {
       throw Exception(

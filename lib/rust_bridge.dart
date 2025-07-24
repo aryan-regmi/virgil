@@ -12,6 +12,8 @@ final _logger = Logger(level: Level.debug);
 
 // TODO: Use writer/reader pools!
 
+// TODO: Add log messages
+
 /// Initalizes the Rust context.
 Future<Context> initalizeContext({
   required String modelPath,
@@ -53,6 +55,7 @@ Future<Context> initalizeContext({
   // Free allocations
   _freeAllocs(dartAllocs: dartAllocs, nativeAllocs: nativeAllocs);
 
+  _logger.i('Context initalized');
   return ctx;
 }
 
@@ -82,7 +85,10 @@ Future<bool> detectWakeWords(Context ctx, int listenDurationMs) async {
   return detected;
 }
 
+/// Listens for commands.
 Future<Context> activeListeningMode(Context ctx, int listenDurationMs) async {
+  _logger.i('Listening for commands');
+
   // Encode arguments
   final ctxEncoded = BincodeWriter.encode(ctx);
 
@@ -114,6 +120,7 @@ Future<Context> activeListeningMode(Context ctx, int listenDurationMs) async {
   // Free allocations
   _freeAllocs(dartAllocs: dartAllocs, nativeAllocs: nativeAllocs);
 
+  _logger.i('Commands transcribed');
   return updatedCtxDecoded;
 }
 
@@ -122,13 +129,13 @@ void _freeAllocs({
   required List<Pointer> dartAllocs,
   required Set<(Pointer<Void>, int)> nativeAllocs,
 }) {
-  _logger.d('Freeing Dart allocations');
   for (var ptr in dartAllocs) {
     malloc.free(ptr);
   }
+  _logger.i('Dart allocations freed');
 
-  _logger.d('Freeing native allocations');
   for (var info in nativeAllocs) {
     freeRustPtr(info.$1, info.$2);
   }
+  _logger.i('Native allocations freed');
 }
