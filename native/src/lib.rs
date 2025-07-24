@@ -69,11 +69,85 @@ pub fn init_context(
     .unwrap()
 }
 
-// TODO: Make wake word listener & active listener
-//
-/// Starts listening to the microphone input and transcribes it.
+/// Listens for wake words.
 #[unsafe(no_mangle)]
-fn listen_for_duration(
+pub fn listen_for_wake_word(ctx: *mut ffi::c_void, ctx_len: usize, miliseconds: usize) -> bool {
+    // Decode context
+    let ctx: Context = deserialize(ctx, ctx_len)
+        .map_err(|e| eprintln!("{e}"))
+        .unwrap();
+    let wake_words = ctx.wake_words.clone();
+
+    // Initialize `Whisper` model
+    let model_ctx =
+        WhisperContext::new_with_params(&ctx.model_path, WhisperContextParameters::default())
+            .map_err(|e| eprintln!("{e}"))
+            .unwrap();
+    let params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
+    let mut model = model_ctx
+        .create_state()
+        .map_err(|e| eprintln!("{e}"))
+        .unwrap();
+
+    // Initialize microphone
+    let host = cpal::default_host();
+    let input_device = host
+        .default_input_device()
+        .ok_or_else(|| "Default input device not found".to_string())
+        .unwrap();
+    let config = input_device.default_input_config().unwrap().config();
+
+    // Setup channels for communication w/ threads
+    let (tx, rx) = mpsc::channel::<Vec<f32>>();
+    let (detect_tx, detect_rx) = mpsc::channel::<bool>();
+
+    // Initialize input stream (microphone)
+    let input_callback = move |data: &[f32], _: &InputCallbackInfo| {
+        tx.send(data.into()).unwrap();
+    };
+    let input_stream = input_device
+        .build_input_stream(&config, input_callback, |err| eprintln!("{err}"), None)
+        .map_err(|e| eprintln!("{e}"))
+        .unwrap();
+
+    // Start stream and process data in thread.
+    input_stream.play().map_err(|e| eprintln!("{e}")).unwrap();
+    thread::spawn(move || {
+        let mut accumulated_data = Vec::<f32>::with_capacity(EXPECTED_SAMPLE_RATE);
+        while let Ok(data) = rx.recv() {
+            accumulated_data.extend_from_slice(&data);
+        }
+
+        // Check for wake words
+        let wake_word_detected =
+            detect_wake_words(&mut model, params.clone(), &wake_words, &accumulated_data)
+                .map_err(|e| eprintln!("{e}"))
+                .unwrap();
+        detect_tx
+            .send(wake_word_detected)
+            .map_err(|e| eprintln!("{e}"))
+            .unwrap();
+    });
+
+    // Listen for specified duration
+    std::thread::sleep(Duration::from_millis(miliseconds as u64));
+
+    // Return
+    let mut wake_word_detected = false;
+    while let Ok(detected) = detect_rx.recv() {
+        if detected {
+            wake_word_detected = true;
+            break;
+        }
+    }
+    wake_word_detected
+}
+
+/// Listens for commands.
+///
+/// This should be called after [listen_for_wake_word] to actively listen for a longer duration.
+#[unsafe(no_mangle)]
+pub fn listen_for_commands(
     ctx: *mut ffi::c_void,
     ctx_len: usize,
     miliseconds: usize,
@@ -87,7 +161,6 @@ fn listen_for_duration(
         .iter()
         .fold(ctx.wake_words.len(), |acc, s| acc + s.len());
     let model_path_len = ctx.model_path.len();
-    let wake_words = ctx.wake_words.clone();
 
     // Initialize `Whisper` model
     let model_ctx =
@@ -129,20 +202,14 @@ fn listen_for_duration(
             accumulated_data.extend_from_slice(&data);
         }
 
-        // Check for wake words
-        let wake_word_detected =
-            detect_wake_words(&mut model, params.clone(), &wake_words, &accumulated_data)
-                .map_err(|e| eprintln!("{e}"))
-                .unwrap();
-        if wake_word_detected {
-            let transcript = transcribe(&mut model, params, &accumulated_data)
-                .map_err(|e| eprintln!("{e}"))
-                .unwrap();
-            transcript_tx
-                .send(transcript)
-                .map_err(|e| eprintln!("{e}"))
-                .unwrap();
-        }
+        // Transcribe accumulated data
+        let transcript = transcribe(&mut model, params, &accumulated_data)
+            .map_err(|e| eprintln!("{e}"))
+            .unwrap();
+        transcript_tx
+            .send(transcript)
+            .map_err(|e| eprintln!("{e}"))
+            .unwrap();
     });
 
     // Listen for specified duration

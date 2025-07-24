@@ -11,17 +11,11 @@ import 'package:flutter/foundation.dart';
 // final _lib = DynamicLibrary.open('libnative.so');
 final _lib = DynamicLibrary.open(
   'native/target/release/libnative.so',
-); // FOR LINUX ONLY
+); // NOTE: FOR LINUX ONLY
 
 // ==================================================================
-// TESTING
+// Native `Message` types
 // ==================================================================
-
-typedef ListenToMicNativeFn = Void Function();
-typedef ListenToMicFn = void Function();
-final listenToMic = _lib.lookupFunction<ListenToMicNativeFn, ListenToMicFn>(
-  'listen_to_mic',
-);
 
 enum MessageStatus { success, error }
 
@@ -53,120 +47,6 @@ class RustMessage implements BincodeCodable {
     writer.writeU64(byteLen);
     writer.writeUint8List(message);
   }
-}
-
-// ==================================================================
-// Native `Message` types
-// ==================================================================
-
-// NOTE: This must be kept in sync with Rust's `MessageType`.
-//
-/// The message type sent to Rust.
-enum MessageType { loadModel, setWakeWords, detectWakeWords, transcribe, debug }
-
-abstract class DartMessage implements BincodeCodable {
-  int get lengthInBytes;
-}
-
-class LoadModelMessage extends DartMessage {
-  LoadModelMessage({required this.modelPath});
-
-  String modelPath;
-
-  @override
-  void encode(BincodeWriter writer) {
-    writer.writeString(modelPath);
-  }
-
-  @override
-  void decode(BincodeReader reader) {
-    modelPath = reader.readString();
-  }
-
-  @override
-  int get lengthInBytes => modelPath.length + sizeOf<Pointer<Utf8>>();
-}
-
-class SetWakeWords extends DartMessage {
-  SetWakeWords({required this.wakeWords});
-
-  List<String> wakeWords;
-
-  @override
-  void decode(BincodeReader reader) {
-    wakeWords = reader.readList(reader.readString);
-  }
-
-  @override
-  void encode(BincodeWriter writer) {
-    writer.writeList(wakeWords, writer.writeString);
-  }
-
-  @override
-  int get lengthInBytes {
-    var len = wakeWords.length * sizeOf<Pointer<Utf8>>();
-    for (var str in wakeWords) {
-      len += str.length;
-    }
-    return len;
-  }
-}
-
-class DetectWakeWordsMessage extends DartMessage {
-  DetectWakeWordsMessage({required this.audioData});
-
-  Float32List audioData;
-
-  @override
-  void encode(BincodeWriter writer) {
-    writer.writeFloat32List(audioData);
-  }
-
-  @override
-  void decode(BincodeReader reader) {
-    audioData = Float32List.fromList(reader.readFloat32List());
-  }
-
-  @override
-  int get lengthInBytes => audioData.lengthInBytes;
-}
-
-class TranscribeMessage extends DartMessage {
-  TranscribeMessage({required this.audioData});
-
-  Float32List audioData;
-
-  @override
-  void encode(BincodeWriter writer) {
-    writer.writeFloat32List(audioData);
-  }
-
-  @override
-  void decode(BincodeReader reader) {
-    audioData = Float32List.fromList(reader.readFloat32List());
-  }
-
-  @override
-  int get lengthInBytes => audioData.lengthInBytes;
-}
-
-class DebugMessage extends DartMessage {
-  DebugMessage({required this.message});
-
-  String message;
-
-  @override
-  void encode(BincodeWriter writer) {
-    writer.writeString(message);
-  }
-
-  @override
-  void decode(BincodeReader reader) {
-    message = reader.readString();
-  }
-
-  @override
-  int get lengthInBytes => message.length;
 }
 
 // ==================================================================
@@ -286,6 +166,14 @@ class ErrorResponse extends RustResponse<String> {
 // ==================================================================
 // Function types
 // ==================================================================
+
+typedef ListenToMicNativeFn = Void Function();
+typedef ListenToMicFn = void Function();
+final listenToMic = _lib.lookupFunction<ListenToMicNativeFn, ListenToMicFn>(
+  'listen_to_mic',
+);
+
+// pub fn listen_for_wake_word(ctx: *mut ffi::c_void, ctx_len: usize, miliseconds: usize) -> bool {
 
 // fn send_message_to_rust(
 //     msg_type: u8,
