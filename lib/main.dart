@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:virgil/native.dart';
 import 'package:virgil/rust_bridge.dart';
 
 void main() {
@@ -35,9 +36,8 @@ class HomePage extends StatefulWidget {
 
 /// The state of the home page.
 class _HomePageState extends State<HomePage> {
-  // final SpeechRecognition _speech = SpeechRecognition(
-  //   wakeWords: ['Hey Virgil', 'Wake'],
-  // );
+  Context? _ctx;
+  bool _detected = false;
 
   @override
   void initState() {
@@ -54,33 +54,42 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    // final listenButton = ElevatedButton(
-    //   onPressed: _speech.isListening
-    //       ? null
-    //       : () async => await _speech.startListening(),
-    //   child: Text('Listen'),
-    // );
-    // final pauseButton = ElevatedButton(
-    //   onPressed: _speech.isListening
-    //       ? () async => await _speech.pauseListening()
-    //       : null,
-    //   child: Text('Pause'),
-    // );
-    // final stopButton = ElevatedButton(
-    //   onPressed: _speech.isListening
-    //       ? () async => await _speech.closeListener()
-    //       : null,
-    //   child: Text('Stop'),
-    // );
-    // final restartButton = ElevatedButton(
-    //   onPressed: _speech.isListening
-    //       ? null
-    //       : () async {
-    //           await _speech.closeListener();
-    //           await _speech.restartListener();
-    //         },
-    //   child: Text('Restart'),
-    // );
+    // while (true) {
+    //   listenToMic();
+    //   await Future.delayed(Duration(seconds: 2));
+    // }
+
+    final initCtxBtn = ElevatedButton(
+      onPressed: () async {
+        _ctx = await initalizeContext(
+          modelPath: 'native/test_assets/ggml-tiny.bin',
+          wakeWords: ['Wake'],
+        );
+      },
+      child: Text('Init Context'),
+    );
+
+    final detectWakeWordsBtn = ElevatedButton(
+      onPressed: () async {
+        final listenDurationMs = 1000;
+        if (_ctx != null) {
+          _detected = await detectWakeWords(_ctx!, listenDurationMs);
+          await Future.delayed(Duration(milliseconds: listenDurationMs));
+        }
+      },
+      child: Text('Detect Wake Word'),
+    );
+
+    final activeListenBtn = ElevatedButton(
+      onPressed: () async {
+        final listenDurationMs = 1000;
+        if (_ctx != null) {
+          _ctx = await activeListeningMode(_ctx!, listenDurationMs);
+          await Future.delayed(Duration(milliseconds: listenDurationMs));
+        }
+      },
+      child: Text('Active Listen'),
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -91,24 +100,13 @@ class _HomePageState extends State<HomePage> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
-            ElevatedButton(
-              onPressed: () async {
-                await initalizeContext(
-                  modelPath: 'native/test_assets/ggml-tiny.bin',
-                  wakeWords: ['Wake'],
-                );
-                // while (true) {
-                //   listenToMic();
-                //   await Future.delayed(Duration(seconds: 2));
-                // }
-              },
-              child: Text('Init Context'),
-            ),
-            // listenButton,
-            // pauseButton,
-            // stopButton,
-            // restartButton,
-            // Text(_speech.transcript),
+            initCtxBtn,
+            detectWakeWordsBtn,
+            activeListenBtn,
+            _detected ? Text('Wake word detected!') : Text(''),
+            _ctx != null
+                ? Text('Transcript: ${_ctx!.transcript}')
+                : Text('Waiting...'),
           ],
         ),
       ),

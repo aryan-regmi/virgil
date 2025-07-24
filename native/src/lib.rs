@@ -246,3 +246,37 @@ fn transcribe(
     }
     Ok(transcript)
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::messages::Message;
+
+    use super::*;
+
+    #[test]
+    fn wake_word() -> VirgilResult<()> {
+        let out_len: usize = 0;
+        let len_out = (&out_len as *const usize).cast_mut();
+
+        let model_path: String = "test_assets/ggml-tiny.bin".into();
+        let model_path_len = model_path.byte_len();
+        let model_path = serialize(model_path, len_out)?;
+
+        let wake_words: Vec<String> = vec!["Wake".into(), "Test".into()];
+        let wake_words_len = wake_words.byte_len();
+        let wake_words = serialize(wake_words, len_out)?;
+
+        let ctx = init_context(
+            model_path,
+            model_path_len,
+            wake_words,
+            wake_words_len,
+            len_out,
+        );
+        let ctx_len = unsafe { *len_out };
+        let detected = listen_for_wake_words(ctx, ctx_len, 1000);
+        dbg!(detected);
+
+        Ok(())
+    }
+}
