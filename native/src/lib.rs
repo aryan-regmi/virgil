@@ -6,6 +6,7 @@ use cpal::{
 };
 use whisper_rs::{
     FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters, WhisperState,
+    install_logging_hooks,
 };
 
 use crate::utils::{Context, VirgilResult, deserialize, serialize};
@@ -17,6 +18,11 @@ mod utils;
 
 /// The expected sample rate and buffer size.
 const EXPECTED_SAMPLE_RATE: usize = 16_000;
+
+#[unsafe(no_mangle)]
+pub fn supress_whisper_logs() {
+    install_logging_hooks();
+}
 
 /// Frees the memory allocated by Rust.
 #[unsafe(no_mangle)]
@@ -103,17 +109,20 @@ pub fn listen_for_wake_words(ctx: *mut ffi::c_void, ctx_len: usize, miliseconds:
 
     // Start stream and process data in thread.
     input_stream.play().map_err(|e| eprintln!("{e}")).unwrap();
-    thread::spawn(move || {
+    let _handle = thread::spawn(move || {
         let mut accumulated_data = Vec::<f32>::with_capacity(EXPECTED_SAMPLE_RATE);
         while let Ok(data) = rx.recv() {
             accumulated_data.extend_from_slice(&data);
         }
+
+        dbg!("THERE");
 
         // Check for wake words
         let wake_word_detected =
             detect_wake_words(&mut model, params.clone(), &wake_words, &accumulated_data)
                 .map_err(|e| eprintln!("{e}"))
                 .unwrap();
+        dbg!("HERE");
         detect_tx
             .send(wake_word_detected)
             .map_err(|e| eprintln!("{e}"))
@@ -123,15 +132,9 @@ pub fn listen_for_wake_words(ctx: *mut ffi::c_void, ctx_len: usize, miliseconds:
     // Listen for specified duration
     std::thread::sleep(Duration::from_millis(miliseconds as u64));
 
-    // Return
-    let mut wake_word_detected = false;
-    while let Ok(detected) = detect_rx.recv() {
-        if detected {
-            wake_word_detected = true;
-            break;
-        }
-    }
-    wake_word_detected
+    let out = detect_rx.try_recv().unwrap_or_else(|_| false);
+    // _handle.join().map_err(|e| eprintln!("{e:?}")).unwrap();
+    out
 }
 
 /// Listens for commands.
@@ -204,9 +207,8 @@ pub fn listen_for_commands(
 
     // Return updated context
     let mut transcript = String::with_capacity(1024);
-    while let Ok(text) = transcript_rx.recv() {
-        transcript.push_str(&text);
-    }
+    let text = transcript_rx.try_recv().unwrap_or_else(|_| String::new());
+    transcript.push_str(&text);
     ctx.transcript = transcript;
     serialize(ctx, ctx_len_out)
         .map_err(|e| eprintln!("{e}"))
@@ -221,6 +223,8 @@ fn detect_wake_words(
     audio_data: &[f32],
 ) -> VirgilResult<bool> {
     let transcript = transcribe(model, params, audio_data)?.to_lowercase();
+
+    dbg!("INSEIDE");
 
     for word in wake_words {
         if transcript.contains(&word.to_lowercase()) {
@@ -253,8 +257,8 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn wake_word() -> VirgilResult<()> {
+    fn get_context() -> VirgilResult<(*mut ffi::c_void, usize)> {
+        supress_whisper_logs();
         let out_len: usize = 0;
         let len_out = (&out_len as *const usize).cast_mut();
 
@@ -274,8 +278,27 @@ mod tests {
             len_out,
         );
         let ctx_len = unsafe { *len_out };
-        let detected = listen_for_wake_words(ctx, ctx_len, 1000);
+        Ok((ctx, ctx_len))
+    }
+
+    #[test]
+    fn wake_word_listener() -> VirgilResult<()> {
+        let (ctx, ctx_len) = get_context()?;
+        let detected = listen_for_wake_words(ctx, ctx_len, 500);
         dbg!(detected);
+
+        Ok(())
+    }
+
+    #[ignore]
+    #[test]
+    fn active_listener() -> VirgilResult<()> {
+        let (ctx, ctx_len) = get_context()?;
+        let out_len: usize = 0;
+        let len_out = (&out_len as *const usize).cast_mut();
+        let ctx = listen_for_commands(ctx, ctx_len, 5000, len_out);
+        let ctx: Context = deserialize(ctx, ctx_len)?;
+        dbg!(ctx.transcript);
 
         Ok(())
     }
