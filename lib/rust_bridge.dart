@@ -26,12 +26,8 @@ Future<Context> initalizeContext({
   // Allocate memory to send to Rust
   final modelPathPtr = calloc.allocate<Uint8>(modelPathEncoded.length);
   final wakeWordsPtr = calloc.allocate<Uint8>(wakeWordsEncoded.length);
-  final msgLenOutPtr = calloc.allocate<UintPtr>(sizeOf<UintPtr>());
-  final dartAllocs = [
-    modelPathPtr,
-    wakeWordsPtr,
-    msgLenOutPtr,
-  ]; // FIXME: Func to free at once
+  final ctxLenOutPtr = calloc.allocate<UintPtr>(sizeOf<UintPtr>());
+  final dartAllocs = [modelPathPtr, wakeWordsPtr, ctxLenOutPtr];
 
   // Copy encoded message over
   var modelPathBytes = modelPathPtr.asTypedList(modelPathEncoded.length);
@@ -40,24 +36,19 @@ Future<Context> initalizeContext({
   wakeWordsBytes.setAll(0, wakeWordsEncoded);
 
   // Create context in Rust
-  final msgPtr = initContext(
+  final ctxPtr = initContext(
     modelPathPtr.cast(),
     modelPathBytes.length,
     wakeWordsPtr.cast(),
     wakeWordsBytes.length,
-    msgLenOutPtr,
+    ctxLenOutPtr,
   );
-  final nativeAllocs = {
-    (msgPtr, msgLenOutPtr.value),
-  }; // FIXME: Func to free at once
+  final nativeAllocs = {(ctxPtr, ctxLenOutPtr.value)};
 
   // Decode and return response
-  final msgBytesPtr = msgPtr.cast<Uint8>();
-  final msgBytes = msgBytesPtr.asTypedList(msgLenOutPtr.value);
-
-  final msg = BincodeReader.decode(msgBytes, RustMessage.empty());
-
-  final ctx = BincodeReader.decode(msg.message, Context.empty());
+  final ctxBytesPtr = ctxPtr.cast<Uint8>();
+  final ctxBytes = ctxBytesPtr.asTypedList(ctxLenOutPtr.value);
+  final ctx = BincodeReader.decode(ctxBytes, Context.empty());
 
   // Free allocations
   _freeAllocs(dartAllocs: dartAllocs, nativeAllocs: nativeAllocs);

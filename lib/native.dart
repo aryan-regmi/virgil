@@ -4,7 +4,6 @@ library;
 import 'dart:ffi';
 
 import 'package:d_bincode/d_bincode.dart';
-import 'package:flutter/foundation.dart';
 
 /// The Rust library for communication.
 // final _lib = DynamicLibrary.open('libnative.so');
@@ -15,39 +14,6 @@ final _lib = DynamicLibrary.open(
 // ==================================================================
 // Native `Message` types
 // ==================================================================
-
-enum MessageStatus { success, error }
-
-class RustMessage implements BincodeCodable {
-  RustMessage({
-    required this.status,
-    required this.byteLen,
-    required this.message,
-  });
-
-  RustMessage.empty()
-    : status = MessageStatus.success,
-      byteLen = 0,
-      message = Uint8List(0);
-
-  MessageStatus status;
-  int byteLen;
-  Uint8List message;
-
-  @override
-  void decode(BincodeReader reader) {
-    status = MessageStatus.values[reader.readU8()];
-    byteLen = reader.readU64();
-    message = reader.readUint8List();
-  }
-
-  @override
-  void encode(BincodeWriter writer) {
-    writer.writeU8(status.index);
-    writer.writeU64(byteLen);
-    writer.writeUint8List(message);
-  }
-}
 
 class Context implements BincodeCodable {
   Context({
@@ -122,19 +88,19 @@ typedef _FreeRustPtrNativeFn = Void Function(Pointer<Void> ptr, UintPtr len);
 typedef _FreeRustPtrFn = void Function(Pointer<Void> ptr, int len);
 
 // fn init_context(
-//     model_path: *const ffi::c_void,
+//     model_path: *mut ffi::c_void,
 //     model_path_len: usize,
-//     wake_words: *const ffi::c_void,
+//     wake_words: *mut ffi::c_void,
 //     wake_words_len: usize,
-//     msg_len_out: *mut usize,
-// ) -> *mut ffi::c_void
+//     ctx_len_out: *mut usize,
+// ) -> *mut ffi::c_void {
 typedef _InitContextNativeFn =
     Pointer<Void> Function(
       Pointer<Void> modelPath,
       UintPtr modelPathLen,
       Pointer<Void> wakeWords,
       UintPtr wakeWordsLen,
-      Pointer<UintPtr> msgLenOut,
+      Pointer<UintPtr> ctxLenOut,
     );
 typedef _InitContextFn =
     Pointer<Void> Function(
@@ -142,10 +108,10 @@ typedef _InitContextFn =
       int modelPathLen,
       Pointer<Void> wakeWords,
       int wakeWordsLen,
-      Pointer<UintPtr> msgLenOut,
+      Pointer<UintPtr> ctxLenOut,
     );
 
-// fn listen_for_wake_word(ctx: *mut ffi::c_void, ctx_len: usize, miliseconds: usize) -> bool
+// fn listen_for_wake_words(ctx: *mut ffi::c_void, ctx_len: usize, miliseconds: usize) -> bool
 typedef _ListenForWakeWordNativeFn =
     Bool Function(Pointer<Void> ctx, UintPtr ctxLen, UintPtr miliseconds);
 typedef _ListenForWakeWordFn =
@@ -155,15 +121,22 @@ typedef _ListenForWakeWordFn =
 //     ctx: *mut ffi::c_void,
 //     ctx_len: usize,
 //     miliseconds: usize,
+//     ctx_len_out: *mut usize,
 // ) -> *mut ffi::c_void
 typedef _ListenForCommandsNativeFn =
     Pointer<Void> Function(
       Pointer<Void> ctx,
       UintPtr ctxLen,
       UintPtr miliseconds,
+      Pointer<UintPtr> ctxLenOut,
     );
 typedef _ListenForCommandsFn =
-    Pointer<Void> Function(Pointer<Void> ctx, int ctxLen, int miliseconds);
+    Pointer<Void> Function(
+      Pointer<Void> ctx,
+      int ctxLen,
+      int miliseconds,
+      Pointer<UintPtr> ctxLenOut,
+    );
 
 // ==================================================================
 // Function Bindings
