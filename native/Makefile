@@ -17,17 +17,15 @@ outdir = ../android/app/src/main/jniLibs/
 build_v7:
 	ANDROID_NDK_HOME=$(ndk_path) \
 	ANDROID_NDK=$(ndk_path) \
-	CARGO_NDK_ANDROID_PLATFORM=$(android_platform) \
 	CMAKE_ANDROID_ARCH_ABI=$(abi_v7) \
-	cargo ndk -t $(target_v7) -o $(outdir) build --release
+	cargo ndk -p $(android_platform) -t $(target_v7) -o $(outdir) build --release
 
 build_v8:
 	ANDROID_NDK_HOME=$(ndk_path) \
 	ANDROID_NDK=$(ndk_path) \
-	CARGO_NDK_ANDROID_PLATFORM=$(android_platform) \
 	CMAKE_ANDROID_ARCH_ABI=$(abi_v8) \
 	BINDGEN_EXTRA_CLANG_ARGS="--sysroot=$(sysroot) -I$(sysroot)/usr/include" \
-	cargo ndk -t $(target_v8) -o $(outdir) build --release
+	cargo ndk -p $(android_platform) -t $(target_v8) -o $(outdir) build --release
 	
 build_emulator:
 	ANDROID_NDK_HOME=$(ndk_path) \
@@ -35,7 +33,7 @@ build_emulator:
 	CARGO_NDK_ANDROID_PLATFORM=$(android_platform) \
 	CMAKE_ANDROID_ARCH_ABI=x86_64 \
 	BINDGEN_EXTRA_CLANG_ARGS="--sysroot=$(sysroot) -I$(sysroot)/usr/include" \
-	cargo ndk -t $(target_emulator) -o $(outdir) build --release
+	cargo ndk -p $(android_platform) -t $(target_emulator) -o $(outdir) build --release
 
 build_linux:
 	cargo b --release
