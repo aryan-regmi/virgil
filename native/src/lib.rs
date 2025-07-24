@@ -1,17 +1,28 @@
-use std::{
-    ffi,
-    ptr::{slice_from_raw_parts, slice_from_raw_parts_mut},
-};
+use std::{ffi, ptr::slice_from_raw_parts_mut, sync::mpsc, thread, time::Duration};
 
-use bincode::{Decode, Encode, decode_from_slice, encode_into_slice};
+use cpal::{
+    InputCallbackInfo,
+    traits::{DeviceTrait, HostTrait, StreamTrait},
+};
+use whisper_rs::{
+    FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters, WhisperState,
+};
 
 use crate::{
     messages::{MessageStatus, RustMessage},
-    state::Context,
+    utils::{
+        Context, VirgilResult, deserialize, msg_size, rust_error, serialize_message,
+        serialize_unchecked,
+    },
 };
 
 mod messages;
-mod state;
+mod utils;
+
+// TODO: Replace `rust_error` with `eprintln!()`
+
+/// The expected sample rate and buffer size.
+const EXPECTED_SAMPLE_RATE: usize = 16_000;
 
 /// Frees the memory allocated by Rust.
 #[unsafe(no_mangle)]
@@ -58,105 +69,131 @@ pub fn init_context(
     .unwrap()
 }
 
+// TODO: Make wake word listener & active listener
+//
 /// Starts listening to the microphone input and transcribes it.
 #[unsafe(no_mangle)]
-pub fn start_listening(ctx: *mut ffi::c_void, ctx_len: usize) -> *mut ffi::c_void {
+fn listen_for_duration(
+    ctx: *mut ffi::c_void,
+    ctx_len: usize,
+    miliseconds: usize,
+) -> *mut ffi::c_void {
     // Decode context
     let mut ctx: Context = deserialize(ctx, ctx_len)
-        .map_err(|e| return rust_error(e.to_string()))
+        .map_err(|e| eprintln!("{e}"))
         .unwrap();
-    let wake_words_len = ctx.wake_words.len();
+    let wake_words_len = ctx
+        .wake_words
+        .iter()
+        .fold(ctx.wake_words.len(), |acc, s| acc + s.len());
     let model_path_len = ctx.model_path.len();
+    let wake_words = ctx.wake_words.clone();
 
-    // Run Virgil
-    // let mut virgil = Virgil::new(&ctx.model_path, ctx.wake_words.clone())
-    //     .map_err(|e| return rust_error(e.to_string()))
-    //     .unwrap();
-    // virgil
-    //     .listen()
-    //     .map_err(|e| return rust_error(e.to_string()))
-    //     .unwrap();
-    //
-    // // Update transcript
-    // ctx.transcript = virgil.transcript.clone();
-    //
-    // // Encode context
-    // let extra_byte_len = wake_words_len + model_path_len + ctx.transcript.len();
-    // serialize_message(RustMessage {
-    //     status: MessageStatus::Success,
-    //     byte_len: msg_size::<Context>(extra_byte_len),
-    //     message: serialize_unchecked(ctx, extra_byte_len),
-    // })
-    // .map_err(|e| return rust_error(e.to_string()))
-    // .unwrap()
+    // Initialize `Whisper` model
+    let model_ctx =
+        WhisperContext::new_with_params(&ctx.model_path, WhisperContextParameters::default())
+            .map_err(|e| eprintln!("{e}"))
+            .unwrap();
+    let params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
+    let mut model = model_ctx
+        .create_state()
+        .map_err(|e| eprintln!("{e}"))
+        .unwrap();
 
-    todo!()
-}
+    // Initialize microphone
+    let host = cpal::default_host();
+    let input_device = host
+        .default_input_device()
+        .ok_or_else(|| "Default input device not found".to_string())
+        .unwrap();
+    let config = input_device.default_input_config().unwrap().config();
 
-/// Serialize the given message.
-///
-/// # Note
-/// The caller must free the the returned pointer with [free_rust_ptr].
-fn serialize_message(value: RustMessage) -> Result<*mut ffi::c_void, String> {
-    let byte_len = value.byte_len;
-    let bytes = serialize(value, byte_len)?;
-    let response_ptr: *mut ffi::c_void = Box::into_raw(bytes.into_boxed_slice()).cast();
-    Ok(response_ptr)
-}
+    // Setup channels for communication w/ threads
+    let (tx, rx) = mpsc::channel::<Vec<f32>>();
+    let (transcript_tx, transcript_rx) = mpsc::channel::<String>();
 
-/// Serialize the given encodable value.
-///
-/// # Note
-/// The caller must free the the returned pointer with [free_rust_ptr].
-fn serialize<T: Encode>(value: T, value_byte_len: usize) -> Result<Vec<u8>, String> {
-    let mut bytes = vec![0; value_byte_len];
-    let written = encode_into_slice(
-        value,
-        bytes.as_mut_slice(),
-        bincode::config::standard().with_fixed_int_encoding(),
-    )
-    .map_err(|e| e.to_string())?;
-    assert_eq!(written, value_byte_len);
-    Ok(bytes)
-}
+    // Initialize input stream (microphone)
+    let input_callback = move |data: &[f32], _: &InputCallbackInfo| {
+        tx.send(data.into()).unwrap();
+    };
+    let input_stream = input_device
+        .build_input_stream(&config, input_callback, |err| eprintln!("{err}"), None)
+        .map_err(|e| eprintln!("{e}"))
+        .unwrap();
 
-/// Serialize the given encodable value, without error checks.
-///
-/// # Note
-/// The caller must free the the returned pointer with [free_rust_ptr].
-fn serialize_unchecked<T: Encode>(value: T, extra_byte_len: usize) -> Vec<u8> {
-    serialize(value, size_of::<T>() + extra_byte_len).unwrap()
-}
-
-/// Deserialize the value represented by the given pointer and length.
-fn deserialize<T: Decode<()>>(ptr: *const ffi::c_void, len: usize) -> Result<T, String> {
-    let slice = unsafe {
-        let ptr: *const u8 = ptr.cast();
-        let safe_slice = slice_from_raw_parts(ptr, len).as_ref();
-        if let Some(slice) = safe_slice {
-            slice
-        } else {
-            return Err("Unable to convert `ptr` to a slice of bytes".into());
+    // Start stream and process data in thread.
+    input_stream.play().map_err(|e| eprintln!("{e}")).unwrap();
+    thread::spawn(move || {
+        let mut accumulated_data = Vec::<f32>::with_capacity(EXPECTED_SAMPLE_RATE);
+        while let Ok(data) = rx.recv() {
+            accumulated_data.extend_from_slice(&data);
         }
-    };
 
-    let (decoded, _): (T, usize) =
-        decode_from_slice(slice, bincode::config::standard().with_fixed_int_encoding())
-            .map_err(|e| e.to_string())?;
-    Ok(decoded)
+        // Check for wake words
+        let wake_word_detected =
+            detect_wake_words(&mut model, params.clone(), &wake_words, &accumulated_data)
+                .map_err(|e| eprintln!("{e}"))
+                .unwrap();
+        if wake_word_detected {
+            let transcript = transcribe(&mut model, params, &accumulated_data)
+                .map_err(|e| eprintln!("{e}"))
+                .unwrap();
+            transcript_tx
+                .send(transcript)
+                .map_err(|e| eprintln!("{e}"))
+                .unwrap();
+        }
+    });
+
+    // Listen for specified duration
+    std::thread::sleep(Duration::from_millis(miliseconds as u64));
+
+    // Return updated context
+    let mut transcript = String::with_capacity(1024);
+    while let Ok(text) = transcript_rx.recv() {
+        transcript.push_str(&text);
+    }
+    let extra_byte_len = wake_words_len + model_path_len + transcript.len();
+    ctx.transcript = transcript;
+    serialize_message(RustMessage {
+        status: MessageStatus::Success,
+        byte_len: msg_size::<Context>(extra_byte_len),
+        message: serialize_unchecked(ctx, extra_byte_len),
+    })
+    .map_err(|e| return rust_error(e.to_string()))
+    .unwrap()
 }
 
-/// Returns a string containing error info.
-fn rust_error(details: String) -> *mut ffi::c_void {
-    let extra_byte_len = details.len();
-    let error = RustMessage {
-        status: MessageStatus::Error,
-        byte_len: msg_size::<String>(extra_byte_len),
-        message: serialize_unchecked(details, extra_byte_len),
-    };
-    serialize_message(error).unwrap()
+/// Checks for wake words in audio data.
+fn detect_wake_words(
+    model: &mut WhisperState,
+    params: FullParams,
+    wake_words: &Vec<String>,
+    audio_data: &[f32],
+) -> VirgilResult<bool> {
+    let transcript = transcribe(model, params, audio_data)?.to_lowercase();
+
+    for word in wake_words {
+        if transcript.contains(&word.to_lowercase()) {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
 }
 
-const fn msg_size<T>(extra_byte_len: usize) -> usize {
-    size_of::<RustMessage>() + size_of::<T>() + extra_byte_len
+/// Converts audio data to text.
+fn transcribe(
+    model: &mut WhisperState,
+    params: FullParams,
+    audio_data: &[f32],
+) -> VirgilResult<String> {
+    model.full(params, audio_data)?;
+    let mut transcript = String::with_capacity(1026);
+    let num_segments = model.full_n_segments().unwrap();
+    for i in 0..num_segments {
+        let segment = model.full_get_segment_text(i).unwrap();
+        transcript.push_str(&segment);
+    }
+    Ok(transcript)
 }
