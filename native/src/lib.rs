@@ -8,13 +8,12 @@ use whisper_rs::{
     FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters, WhisperState,
 };
 
-use crate::{
-    messages::{MessageStatus, RustMessage},
-    utils::{Context, VirgilResult, deserialize, msg_size, serialize_message, serialize_unchecked},
-};
+use crate::utils::{Context, VirgilResult, deserialize, serialize};
 
 mod messages;
 mod utils;
+
+// FIXME: Null checks!!
 
 /// The expected sample rate and buffer size.
 const EXPECTED_SAMPLE_RATE: usize = 16_000;
@@ -38,7 +37,7 @@ pub fn init_context(
     model_path_len: usize,
     wake_words: *mut ffi::c_void,
     wake_words_len: usize,
-    msg_len_out: *mut usize,
+    ctx_len_out: *mut usize,
 ) -> *mut ffi::c_void {
     // Decode model path and wake words
     let model_path: String = deserialize(model_path, model_path_len)
@@ -56,15 +55,9 @@ pub fn init_context(
         wake_words,
         transcript: String::with_capacity(transcript_capacity),
     };
-    let extra_byte_len = wake_words_len + model_path_len + transcript_capacity;
-    unsafe { *msg_len_out = msg_size::<Context>(extra_byte_len) };
-    serialize_message(RustMessage {
-        status: MessageStatus::Success,
-        byte_len: msg_size::<Context>(extra_byte_len),
-        message: serialize_unchecked(ctx, extra_byte_len),
-    })
-    .map_err(|e| eprintln!("{e}"))
-    .unwrap()
+    serialize(ctx, ctx_len_out)
+        .map_err(|e| eprintln!("{e}"))
+        .unwrap()
 }
 
 /// Listens for wake words.
@@ -149,16 +142,12 @@ pub fn listen_for_commands(
     ctx: *mut ffi::c_void,
     ctx_len: usize,
     miliseconds: usize,
+    ctx_len_out: *mut usize,
 ) -> *mut ffi::c_void {
     // Decode context
     let mut ctx: Context = deserialize(ctx, ctx_len)
         .map_err(|e| eprintln!("{e}"))
         .unwrap();
-    let wake_words_len = ctx
-        .wake_words
-        .iter()
-        .fold(ctx.wake_words.len(), |acc, s| acc + s.len());
-    let model_path_len = ctx.model_path.len();
 
     // Initialize `Whisper` model
     let model_ctx =
@@ -218,15 +207,10 @@ pub fn listen_for_commands(
     while let Ok(text) = transcript_rx.recv() {
         transcript.push_str(&text);
     }
-    let extra_byte_len = wake_words_len + model_path_len + transcript.len();
     ctx.transcript = transcript;
-    serialize_message(RustMessage {
-        status: MessageStatus::Success,
-        byte_len: msg_size::<Context>(extra_byte_len),
-        message: serialize_unchecked(ctx, extra_byte_len),
-    })
-    .map_err(|e| eprintln!("{e}"))
-    .unwrap()
+    serialize(ctx, ctx_len_out)
+        .map_err(|e| eprintln!("{e}"))
+        .unwrap()
 }
 
 /// Checks for wake words in audio data.
