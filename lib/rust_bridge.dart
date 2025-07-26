@@ -59,36 +59,7 @@ Future<Context> initalizeContext({
   return ctx;
 }
 
-/// Detects for wake words.
-Future<bool> detectWakeWords(Context ctx, int listenDurationMs) async {
-  // Encode arguments
-  final ctxEncoded = BincodeWriter.encode(ctx);
-
-  // Allocate memory to send to Rust
-  final ctxPtr = calloc.allocate<Uint8>(ctxEncoded.length);
-  final dartAllocs = [ctxPtr];
-
-  // Copy encoded message over
-  var ctxBytes = ctxPtr.asTypedList(ctxEncoded.length);
-  ctxBytes.setAll(0, ctxEncoded);
-
-  // Call Rust func to detect wake words
-  final detected = listenForWakeWords(
-    ctxPtr.cast(),
-    ctxEncoded.length,
-    listenDurationMs,
-  );
-
-  // Free allocations
-  _freeAllocs(dartAllocs: dartAllocs, nativeAllocs: {});
-
-  return detected;
-}
-
-/// Listens for commands.
-Future<Context> activeListeningMode(Context ctx, int listenDurationMs) async {
-  _logger.i('Listening for commands');
-
+Future<String> transcribe(Context ctx, int timeoutMs) async {
   // Encode arguments
   final ctxEncoded = BincodeWriter.encode(ctx);
 
@@ -101,10 +72,11 @@ Future<Context> activeListeningMode(Context ctx, int listenDurationMs) async {
   var ctxBytes = ctxPtr.asTypedList(ctxEncoded.length);
   ctxBytes.setAll(0, ctxEncoded);
 
-  final updatedCtxPtr = listenForCommands(
+  // Call Rust function
+  final updatedCtxPtr = transcribeSpeech(
     ctxPtr.cast(),
     ctxEncoded.length,
-    listenDurationMs,
+    timeoutMs,
     ctxLenOutPtr,
   );
   final nativeAllocs = {(updatedCtxPtr, ctxLenOutPtr.value)};
@@ -120,8 +92,7 @@ Future<Context> activeListeningMode(Context ctx, int listenDurationMs) async {
   // Free allocations
   _freeAllocs(dartAllocs: dartAllocs, nativeAllocs: nativeAllocs);
 
-  _logger.i('Commands transcribed');
-  return updatedCtxDecoded;
+  return updatedCtxDecoded.transcript;
 }
 
 /// Frees the defined allocations.
