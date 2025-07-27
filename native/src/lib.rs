@@ -5,7 +5,6 @@ use std::{
     time::Duration,
 };
 
-use bincode::encode_to_vec;
 use cpal::{
     InputCallbackInfo, SampleRate,
     traits::{DeviceTrait, HostTrait, StreamTrait},
@@ -132,29 +131,30 @@ pub fn transcribe_speech(
     // Transcribe audio data if wake words detected
     let start_time = Instant::now();
     let timeout = Duration::from_millis(timeout_ms as u64);
-    let mut transcript = String::with_capacity(1024);
+    let mut audio_data = Vec::with_capacity(EXPECTED_SAMPLE_RATE);
     loop {
         if start_time.elapsed() > timeout {
             break;
         }
 
-        // FIXME: Collect the data, transcribe all together at the end (not in the loop!)
-        while let Ok(audio_data) = &accumulator.recv() {
-            debug!("Detecting wake words...");
-            let wake_word_detected =
-                detect_wake_words(&mut model, params.clone(), &wake_words, &audio_data)
-                    .map_err(|e| error!("{e}"))
-                    .unwrap();
-            // if wake_word_detected {
-            let text = transcribe(&mut model, params.clone(), audio_data)
-                .map_err(|e| error!("{e}"))
-                .unwrap();
-            transcript.push_str(&text);
-            // }
+        while let Ok(data) = &accumulator.recv() {
+            audio_data.extend_from_slice(data);
         }
     }
 
-    ctx.transcript = transcript;
+    debug!("Detecting wake words...");
+    let wake_word_detected =
+        detect_wake_words(&mut model, params.clone(), &wake_words, &audio_data)
+            .map_err(|e| error!("{e}"))
+            .unwrap();
+    if wake_word_detected {
+        debug!("Wake word detected!")
+    }
+    let text = transcribe(&mut model, params.clone(), &audio_data)
+        .map_err(|e| error!("{e}"))
+        .unwrap();
+
+    ctx.transcript.push_str(&text);
     serialize(ctx, ctx_len_out)
         .map_err(|e| error!("{e}"))
         .unwrap()
@@ -264,7 +264,18 @@ fn accumulate_audio_data(
     thread::spawn(move || {
         let mut accumulated_data = Vec::with_capacity(min_num_samples);
         while let Ok(data) = receiver.try_recv() {
-            accumulated_data.extend_from_slice(&data);
+            let len = accumulated_data.len();
+            if len < min_num_samples {
+                continue;
+            }
+
+            let extra = min_num_samples - len;
+            if extra > 0 {
+                accumulated_data.extend_from_slice(&data[0..min_num_samples]);
+                accumulated_data.drain(0..min_num_samples);
+            } else {
+                accumulated_data.extend_from_slice(&data);
+            }
         }
         if audio_tx.send(accumulated_data.clone()).is_err() {
             error!("Failed to send accumulated audio data");
@@ -324,13 +335,13 @@ mod tests {
         let tst: usize = 0;
         let (ctx, ctx_len) = get_context()?;
         let ctx_len_out = &tst as *const usize;
-        // loop {
-        let transcript = transcribe_speech(ctx, ctx_len, 3000, ctx_len_out.cast_mut());
-        let ctx: Context = unsafe { deserialize(transcript, *ctx_len_out)? };
-        if !ctx.transcript.is_empty() {
-            debug!("transcription: {:?}", ctx.transcript);
+        loop {
+            let transcript = transcribe_speech(ctx, ctx_len, 3000, ctx_len_out.cast_mut());
+            let ctx: Context = unsafe { deserialize(transcript, *ctx_len_out)? };
+            if !ctx.transcript.is_empty() {
+                debug!("transcription: {:?}", ctx.transcript);
+            }
         }
-        // }
-        Ok(())
+        // Ok(())
     }
 }
