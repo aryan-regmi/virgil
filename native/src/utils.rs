@@ -2,16 +2,13 @@ use std::{ffi, ptr::slice_from_raw_parts};
 
 use bincode::{Decode, Encode, decode_from_slice, encode_into_slice};
 use cpal::{
-    InputCallbackInfo, SampleRate, Stream, StreamConfig,
+    InputCallbackInfo, SampleRate, Stream,
     traits::{DeviceTrait, HostTrait},
 };
 use thiserror::Error;
 use tokio::sync::mpsc;
 use tracing::{Level, error, info, span};
-use whisper_rs::{
-    FullParams, WhisperContext, WhisperContextParameters, WhisperState,
-    convert_stereo_to_mono_audio,
-};
+use whisper_rs::{FullParams, WhisperContext, WhisperContextParameters, WhisperState};
 
 use crate::messages::Message;
 
@@ -21,7 +18,7 @@ pub type VirgilResult<T> = Result<T, anyhow::Error>;
 /// The context passed around for FFI functions.
 #[derive(Encode, Decode)]
 pub struct Context {
-    pub model_path: String,
+    // pub model_path: String,
     pub wake_words: Vec<String>,
     pub transcript: String,
 }
@@ -64,11 +61,9 @@ pub fn deserialize<T: Decode<()>>(ptr: *mut ffi::c_void, len: usize) -> VirgilRe
     Ok(decoded)
 }
 
-#[allow(dead_code)]
 /// The expected sample rate and buffer size.
 pub const EXPECTED_SAMPLE_RATE: usize = 16_000;
 
-#[allow(dead_code)]
 /// Initialize the `Whisper` model.
 pub fn init_model(model_path: &str) -> VirgilResult<WhisperState> {
     let span = span!(Level::TRACE, "init_model");
@@ -82,7 +77,6 @@ pub fn init_model(model_path: &str) -> VirgilResult<WhisperState> {
     Ok(model)
 }
 
-#[allow(dead_code)]
 /// Converts audio data to text using the provided `Whisper` model and parameters.
 pub fn transcribe(
     model: &mut WhisperState,
@@ -139,7 +133,8 @@ pub fn init_microphone(audio_data_tx: mpsc::Sender<Vec<f32>>) -> VirgilResult<St
         .supported_input_configs()?
         .next()
         .ok_or_else(|| MicrophoneConfigError("No supported configs found".into()))?
-        .with_sample_rate(SampleRate(EXPECTED_SAMPLE_RATE as u32))
+        .try_with_sample_rate(SampleRate(EXPECTED_SAMPLE_RATE as u32))
+        .ok_or_else(|| MicrophoneConfigError(format!("No supported configs found with the the specified sample rate: {EXPECTED_SAMPLE_RATE} Hz")))?
         .config();
     info!("Microphone initalized");
 
@@ -167,6 +162,9 @@ pub fn init_microphone(audio_data_tx: mpsc::Sender<Vec<f32>>) -> VirgilResult<St
     Ok(stream)
 }
 
+#[allow(dead_code)]
+// FIXME: Split channels and only handle mono audio!
+//
 /// Accumulates audio data until there are the enough samples for the specified duration.
 pub async fn accumulate_audio_data(
     sender: mpsc::Sender<Vec<f32>>,
