@@ -1,11 +1,16 @@
-use std::{ffi, ptr::slice_from_raw_parts_mut, time::Duration};
+use std::{
+    ffi,
+    ptr::slice_from_raw_parts_mut,
+    thread::{self, sleep},
+    time::Duration,
+};
 
 use cpal::{
     InputCallbackInfo, SampleRate,
     traits::{DeviceTrait, HostTrait, StreamTrait},
 };
-use tokio::sync::mpsc;
-use tokio::time::Instant;
+use std::sync::mpsc;
+use std::time::Instant;
 use tracing::{Level, debug, error, span, trace};
 use whisper_rs::{
     FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters, WhisperState,
@@ -21,6 +26,8 @@ mod utils;
 
 /// The expected sample rate and buffer size.
 const EXPECTED_SAMPLE_RATE: usize = 16_000;
+
+// FIXME: Setup tracing subscriber!
 
 /// Suppress logs from `whisper.cpp`.
 #[unsafe(no_mangle)]
@@ -79,7 +86,7 @@ pub fn init_context(
 
 /// Listens to microphone input and transcribes it to text.
 #[unsafe(no_mangle)]
-pub async fn transcribe_speech(
+pub fn transcribe_speech(
     ctx: *mut ffi::c_void,
     ctx_len: usize,
     timeout_ms: usize,
@@ -90,13 +97,14 @@ pub async fn transcribe_speech(
     let _enter = span.enter();
 
     // Setup channels for communication
-    let (audio_data_tx, audio_data_rx) = mpsc::channel::<Vec<f32>>(EXPECTED_SAMPLE_RATE);
+    let (audio_data_tx, audio_data_rx) = mpsc::channel::<Vec<f32>>();
 
     // Decode context
     let mut ctx: Context = deserialize(ctx, ctx_len)
         .map_err(|e| error!("{e}"))
         .unwrap();
     let wake_words = ctx.wake_words.clone();
+    debug!("Context decoded");
 
     // Initialize `Whisper` model
     let model_ctx =
@@ -105,37 +113,42 @@ pub async fn transcribe_speech(
             .unwrap();
     let params = FullParams::new(SamplingStrategy::Greedy { best_of: 2 });
     let mut model = model_ctx.create_state().map_err(|e| error!("{e}")).unwrap();
+    debug!("Model initalized");
 
     // Spawn task to listen to microphone and capture audio data
-    tokio::spawn(listen_for_duration(audio_data_tx, timeout_ms as u64));
+    // thread::spawn(move || listen_for_duration(audio_data_tx, timeout_ms as u64));
+    listen_for_duration(audio_data_tx, timeout_ms as u64);
+    debug!("Listening...");
 
     // Accumulate audio data until sample is large enough
-    let mut accumulator = accumulate_audio_data(audio_data_rx, EXPECTED_SAMPLE_RATE);
+    let accumulator = accumulate_audio_data(audio_data_rx, EXPECTED_SAMPLE_RATE);
+    debug!("Audio data accumulated");
 
     // Process data
+    // Transcribe audio data if wake words detected
     let start_time = Instant::now();
     let timeout = Duration::from_millis(timeout_ms as u64);
     let mut transcript = String::with_capacity(1024);
     loop {
-        // Stop after defined timeout
         if start_time.elapsed() > timeout {
             break;
         }
 
-        // Transcribe audio data if wake words detected
-        if let Some(audio_data) = &accumulator.recv().await {
+        while let Ok(audio_data) = &accumulator.recv() {
+            debug!("Detecting wake words...");
             let wake_word_detected =
                 detect_wake_words(&mut model, params.clone(), &wake_words, &audio_data)
                     .map_err(|e| error!("{e}"))
                     .unwrap();
-            if wake_word_detected {
-                let text = transcribe(&mut model, params.clone(), audio_data)
-                    .map_err(|e| error!("{e}"))
-                    .unwrap();
-                transcript.push_str(&text);
-            }
+            // if wake_word_detected {
+            let text = transcribe(&mut model, params.clone(), audio_data)
+                .map_err(|e| error!("{e}"))
+                .unwrap();
+            transcript.push_str(&text);
+            // }
         }
     }
+
     ctx.transcript = transcript;
     serialize(ctx, ctx_len_out)
         .map_err(|e| error!("{e}"))
@@ -150,7 +163,6 @@ fn detect_wake_words(
     audio_data: &[f32],
 ) -> VirgilResult<bool> {
     let transcript = transcribe(model, params, audio_data)?.to_lowercase();
-    debug!("{transcript}");
 
     for word in wake_words {
         if transcript.contains(&word.to_lowercase()) {
@@ -178,7 +190,7 @@ fn transcribe(
 }
 
 /// Initalizes the microphone and listens for the specified number of milliseconds.
-async fn listen_for_duration(sender: mpsc::Sender<Vec<f32>>, listen_duration_ms: u64) {
+fn listen_for_duration(sender: mpsc::Sender<Vec<f32>>, listen_duration_ms: u64) {
     // Initialize microphone
     let host = cpal::default_host();
     let input_device = host
@@ -193,6 +205,7 @@ async fn listen_for_duration(sender: mpsc::Sender<Vec<f32>>, listen_duration_ms:
         .unwrap()
         .with_sample_rate(SampleRate(EXPECTED_SAMPLE_RATE as u32))
         .config();
+    debug!("Microphone initalized");
 
     // Initialize input stream (microphone)
     let stream = input_device
@@ -207,13 +220,16 @@ async fn listen_for_duration(sender: mpsc::Sender<Vec<f32>>, listen_duration_ms:
                     // Split audio channels and process them separately
                     let channels = data.chunks_exact(num_channels);
                     for channel_audio in channels {
-                        sender
-                            .try_send(channel_audio.into())
-                            .map_err(|e| error!("{e}"))
-                            .unwrap()
+                        if sender.send(channel_audio.into()).is_err() {
+                            error!("Input stream has shut down");
+                            break;
+                        }
                     }
                 } else {
-                    sender.try_send(data.into()).unwrap()
+                    if sender.send(data.into()).is_err() {
+                        error!("Input stream has shut down");
+                        return;
+                    }
                 }
             },
             |e| error!("{e}"),
@@ -221,39 +237,34 @@ async fn listen_for_duration(sender: mpsc::Sender<Vec<f32>>, listen_duration_ms:
         )
         .map_err(|e| error!("{e}"))
         .unwrap();
+    debug!("Input stream initalized");
 
     // Start the stream
     stream.play().map_err(|e| error!("{e}")).unwrap();
+    debug!("Stream started!");
 
     // Keep the stream alive
     loop {
-        tokio::time::sleep(Duration::from_millis(listen_duration_ms)).await
+        sleep(Duration::from_millis(listen_duration_ms));
+        break;
     }
 }
 
 /// Accumulates audio data until there are `min_num_samples` audio samples.
 fn accumulate_audio_data(
-    mut receiver: mpsc::Receiver<Vec<f32>>,
+    receiver: mpsc::Receiver<Vec<f32>>,
     min_num_samples: usize,
 ) -> mpsc::Receiver<Vec<f32>> {
-    let (audio_tx, audio_rx) = tokio::sync::mpsc::channel::<Vec<f32>>(min_num_samples);
-    tokio::spawn(async move {
+    let (audio_tx, audio_rx) = mpsc::channel::<Vec<f32>>();
+    thread::spawn(move || {
         let mut accumulated_data = Vec::with_capacity(min_num_samples);
-        while let Some(data) = receiver.recv().await {
+        while let Ok(data) = receiver.try_recv() {
             accumulated_data.extend_from_slice(&data);
-            let data_len = accumulated_data.len();
-
-            if data_len >= min_num_samples {
-                if data_len % 2 != 0 {
-                    accumulated_data.remove(data_len - 1);
-                }
-                whisper_rs::convert_stereo_to_mono_audio(&accumulated_data)
-                    .map_err(|e| error!("{e}"))
-                    .unwrap();
-                audio_tx.send(accumulated_data.clone()).await.unwrap();
-                accumulated_data.clear();
-            }
         }
+        if audio_tx.send(accumulated_data.clone()).is_err() {
+            error!("Failed to send accumulated audio data");
+        }
+        accumulated_data.clear();
     });
     audio_rx
 }
@@ -273,7 +284,11 @@ mod tests {
             .with_target("native", Level::TRACE)
             .with_target("whisper-rs", Level::ERROR);
         tracing_subscriber::registry()
-            .with(tracing_subscriber::fmt::layer())
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .with_line_number(true)
+                    .with_thread_ids(true),
+            )
             .with(filter)
             .init();
 
@@ -299,17 +314,18 @@ mod tests {
         Ok((ctx, ctx_len))
     }
 
-    #[tokio::test]
-    async fn test_listener() -> VirgilResult<()> {
+    #[test]
+    fn test_listener() -> VirgilResult<()> {
         let tst: usize = 0;
         let (ctx, ctx_len) = get_context()?;
         let ctx_len_out = &tst as *const usize;
-        loop {
-            let transcript = transcribe_speech(ctx, ctx_len, 3000, ctx_len_out.cast_mut()).await;
-            let ctx: Context = unsafe { deserialize(transcript, *ctx_len_out)? };
-            if !ctx.transcript.is_empty() {
-                debug!("transcription: {:?}", ctx.transcript);
-            }
+        // loop {
+        let transcript = transcribe_speech(ctx, ctx_len, 3000, ctx_len_out.cast_mut());
+        let ctx: Context = unsafe { deserialize(transcript, *ctx_len_out)? };
+        if !ctx.transcript.is_empty() {
+            debug!("transcription: {:?}", ctx.transcript);
         }
+        // }
+        Ok(())
     }
 }
