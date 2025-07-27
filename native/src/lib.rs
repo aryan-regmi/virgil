@@ -5,6 +5,7 @@ use std::{
     time::Duration,
 };
 
+use bincode::encode_to_vec;
 use cpal::{
     InputCallbackInfo, SampleRate,
     traits::{DeviceTrait, HostTrait, StreamTrait},
@@ -47,6 +48,9 @@ pub fn free_rust_ptr(ptr: *mut ffi::c_void, len: usize) {
     }
 }
 
+// TODO: Have lazy static for the actual model?
+//  - Keeps from creating new state every call
+//
 /// Initalizes the application context.
 #[unsafe(no_mangle)]
 pub fn init_context(
@@ -134,6 +138,7 @@ pub fn transcribe_speech(
             break;
         }
 
+        // FIXME: Collect the data, transcribe all together at the end (not in the loop!)
         while let Ok(audio_data) = &accumulator.recv() {
             debug!("Detecting wake words...");
             let wake_word_detected =
