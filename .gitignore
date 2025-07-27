@@ -11,6 +11,7 @@
 .svn/
 .swiftpm/
 migrate_working_dir/
+./native/test_assets/ggml-small.en.bin
 
 # IntelliJ related
 *.iml
