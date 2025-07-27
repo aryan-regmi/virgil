@@ -73,13 +73,15 @@ class _HomePageState extends State<HomePage> {
 
     final listenBtn = ElevatedButton(
       onPressed: () async {
-        final listenDurationMs = 1000;
-        if (_ctx != null) {
-          final text = await transcribe(_ctx!, listenDurationMs);
-          setState(() {
-            _ctx!.transcript = text;
-          });
-          await Future.delayed(Duration(milliseconds: listenDurationMs));
+        while (true) {
+          final listenDurationMs = 1000;
+          if (_ctx != null) {
+            final text = await transcribe(_ctx!, listenDurationMs);
+            setState(() {
+              _ctx!.transcript = text;
+            });
+            await Future.delayed(Duration(milliseconds: listenDurationMs));
+          }
         }
       },
       child: Text('Listen'),
