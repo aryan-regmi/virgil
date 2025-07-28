@@ -83,6 +83,10 @@ class WakeWords implements BincodeCodable {
 // Function types
 // ==================================================================
 
+// fn setup_logs()
+typedef _SetupLogsNativeFn = Void Function();
+typedef _SetupLogsFn = void Function();
+
 // fn free_rust_ptr(ptr: *const ffi::c_void, len: usize)
 typedef _FreeRustPtrNativeFn = Void Function(Pointer<Void> ptr, UintPtr len);
 typedef _FreeRustPtrFn = void Function(Pointer<Void> ptr, int len);
@@ -93,7 +97,7 @@ typedef _FreeRustPtrFn = void Function(Pointer<Void> ptr, int len);
 //     wake_words: *mut ffi::c_void,
 //     wake_words_len: usize,
 //     ctx_len_out: *mut usize,
-// ) -> *mut ffi::c_void {
+// ) -> *mut ffi::c_void
 typedef _InitContextNativeFn =
     Pointer<Void> Function(
       Pointer<Void> modelPath,
@@ -111,17 +115,19 @@ typedef _InitContextFn =
       Pointer<UintPtr> ctxLenOut,
     );
 
-// async fn transcribe_speech(
+// fn transcribe_speech(
 //     ctx: *mut ffi::c_void,
 //     ctx_len: usize,
-//     timeout_ms: usize,
+//     listen_duration_ms: usize,
+//     mut _ctx_out: *mut ffi::c_void,
 //     ctx_len_out: *mut usize,
-// ) -> *mut ffi::c_void
+// )
 typedef _TranscribeSpeechNativeFn =
     Pointer<Void> Function(
       Pointer<Void> ctx,
       UintPtr ctxLen,
-      UintPtr timeoutMs,
+      UintPtr listenDurationMs,
+      Pointer<Void> ctxOut,
       Pointer<UintPtr> ctxLenOut,
     );
 typedef _TranscribeSpeechFn =
@@ -129,12 +135,18 @@ typedef _TranscribeSpeechFn =
       Pointer<Void> ctx,
       int ctxLen,
       int timeoutMs,
+      Pointer<Void> ctxOut,
       Pointer<UintPtr> ctxLenOut,
     );
 
 // ==================================================================
 // Function Bindings
 // ==================================================================
+
+/// Sets up the logging for the Rust library.
+final setupLogs = _lib.lookupFunction<_SetupLogsNativeFn, _SetupLogsFn>(
+  'setup_logs',
+);
 
 /// Frees the pointer allocated in Rust.
 ///
@@ -150,8 +162,9 @@ final freeRustPtr = _lib.lookupFunction<_FreeRustPtrNativeFn, _FreeRustPtrFn>(
 /// @param modelPathLen The length of the model path (in bytes).
 /// @param wakeWords A list of wake words.
 /// @param wakeWordsLen The length of the wake words (in bytes).
+/// @param ctxLenOut The length of the returned context (in bytes).
 ///
-/// @returns A pointer to a `Context` object.
+/// @returns A pointer to the initalized `Context` object.
 ///
 /// # Note
 /// The returned pointer must be deallocated using the [freeResponseNative] function.
@@ -159,19 +172,22 @@ final initContext = _lib.lookupFunction<_InitContextNativeFn, _InitContextFn>(
   'init_context',
 );
 
+// fn transcribe_speech(
+//     ctx: *mut ffi::c_void,
+//     ctx_len: usize,
+//     listen_duration_ms: usize,
+//     mut _ctx_out: *mut ffi::c_void,
+//     ctx_len_out: *mut usize,
+// )
+
+/// Listens continuously to the microphone and transcribes the input if a wake word was detected.
+///
+/// @param ctx The current context (must be initalized with [initContext]).
+/// @param ctxLen The length of the context (in bytes).
+/// @param listenDurationMs The number of milliseconds to listen to the microphone.
+/// @param ctxOut The context with the updated transcript, returned by the function.
+/// @param ctxLenOut The length of the returned `ctxOut` (in bytes).
 final transcribeSpeech = _lib
     .lookupFunction<_TranscribeSpeechNativeFn, _TranscribeSpeechFn>(
       'transcribe_speech',
     );
-
-// /// Listens for wake words.
-// ///
-// /// @param ctx The application `Context`.
-// /// @param ctxLen The length of the context (in bytes).
-// /// @param miliSeconds The number of miliseconds to listen for.
-// ///
-// /// @returns `true` if wake word was detected.
-// final listenForWakeWords = _lib
-//     .lookupFunction<_ListenForWakeWordNativeFn, _ListenForWakeWordFn>(
-//       'listen_for_wake_words',
-//     );

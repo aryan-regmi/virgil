@@ -89,6 +89,7 @@ pub fn init_context(
     encoded_ctx
 }
 
+/// Listens continuously to the microphone and transcribes the input if a wake word was detected.
 #[unsafe(no_mangle)]
 pub fn transcribe_speech(
     ctx: *mut ffi::c_void,
