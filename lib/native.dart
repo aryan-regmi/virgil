@@ -137,8 +137,8 @@ typedef _InitContextFn =
     );
 
 // Define Dart callback signature
-typedef RustCallbackNativeFn = Void Function(Pointer<Utf8>);
-typedef RustCallbackFn = void Function(Pointer<Utf8>);
+typedef RustCallbackNativeFn = Void Function(Pointer<Void>, UintPtr);
+typedef RustCallbackFn = void Function(Pointer<Void>, int);
 
 // fn transcribe_speech(
 //     ctx: *mut ffi::c_void,

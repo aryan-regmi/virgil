@@ -94,7 +94,7 @@ pub fn init_context(
 }
 
 /// A callback passed to Rust from Dart.
-pub type TranscribedCallback = extern "C" fn(*mut ffi::c_char);
+pub type TranscribedCallback = extern "C" fn(*mut ffi::c_void, usize);
 
 // FIXME: Do this in a background thread?
 //
@@ -155,7 +155,6 @@ pub fn transcribe_speech(
 
     let desired_num_samples = (listen_duration_ms as usize / 1000) * EXPECTED_SAMPLE_RATE + 200;
     let mut accumulated_audio = Vec::with_capacity(desired_num_samples);
-    let mut transcript = ffi::CString::new("").map_err(|e| error!("{e}")).unwrap();
     loop {
         while let Ok(audio_data) = input_audio_rx.try_recv() {
             let accumulated_samples = accumulated_audio.len();
@@ -185,12 +184,12 @@ pub fn transcribe_speech(
                     .unwrap();
 
                 // Send transcript to Dart
-                transcript = ffi::CString::from_str(&text)
+                let mut text_len = 0_usize;
+                let encoded_text = serialize(text, (&mut text_len) as *mut usize)
                     .map_err(|e| error!("{e}"))
                     .unwrap();
-                callback_fn(transcript.as_ptr().cast_mut());
+                callback_fn(encoded_text, text_len);
                 debug!("Transcript updated");
-                // transcript.clear();
 
                 // Reset accumulated data and fill with remaining/overflowing samples
                 debug!("Accumulated data reset");

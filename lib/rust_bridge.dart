@@ -60,7 +60,8 @@ Future<Context> initalizeContext({
 }
 
 Future<void> transcribeInIsolate(Context ctx, int listenDurationMs) async {
-  await compute(transcribeMicInput, [ctx, listenDurationMs]);
+  transcribeMicInput([ctx, listenDurationMs]);
+  // await compute(transcribeMicInput, [ctx, listenDurationMs]);
 }
 
 void transcribeMicInput(List<dynamic> args) {
@@ -79,7 +80,9 @@ void transcribeMicInput(List<dynamic> args) {
   ctxBytes.setAll(0, ctxEncoded);
 
   // Call Rust function
-  final callbackPtr = Pointer.fromFunction<RustCallbackNativeFn>(rustCallback);
+  final callbackPtr = Pointer.fromFunction<RustCallbackNativeFn>(
+    HomePageState.rustCallback,
+  );
   transcribeSpeech(
     ctxPtr.cast(),
     ctxEncoded.length,

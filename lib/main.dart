@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ffi';
 
+import 'package:d_bincode/d_bincode.dart';
 import 'package:ffi/ffi.dart';
 import 'package:flutter/material.dart';
 import 'package:logger/web.dart';
@@ -35,22 +36,28 @@ class HomePage extends StatefulWidget {
   final String title;
 
   @override
-  State<HomePage> createState() => _HomePageState();
+  State<HomePage> createState() => HomePageState();
 }
 
-// final _logger = Logger();
-String transcript = '';
-void rustCallback(Pointer<Utf8> textPtr) {
-  transcript = textPtr.toDartString();
-  _HomePageState._streamController.add(transcript);
-}
+final _logger = Logger();
 
 /// The state of the home page.
-class _HomePageState extends State<HomePage> {
+class HomePageState extends State<HomePage> {
   final LogLevel _level = LogLevel.info;
   Context? _ctx;
-  String _transcript = '';
+  final List<String> _transcript = [];
   static final _streamController = StreamController<String>.broadcast();
+
+  static void rustCallback(Pointer<Void> textPtr, int textLen) {
+    final textBytes = textPtr.cast<Uint8>().asTypedList(textLen);
+    final decodedTranscript = BincodeReader.decode(
+      textBytes,
+      Transcript.empty(),
+    );
+    _streamController.add(decodedTranscript.text);
+    // _logger.i(decodedTranscript.text);
+    freeRustPtr(textPtr, textLen);
+  }
 
   @override
   void initState() {
@@ -58,6 +65,8 @@ class _HomePageState extends State<HomePage> {
     setupLogs(_level.index);
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      // Timer.periodic(Duration(seconds: 1), (_) => setState(() {}));
+
       final modelManager = await ModelManager.init();
       if (modelManager.modelPath != null) {
         _ctx = await initalizeContext(
@@ -96,14 +105,18 @@ class _HomePageState extends State<HomePage> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
             listenBtn,
-            StreamBuilder(
+            StreamBuilder<String>(
               stream: _streamController.stream,
-              builder: (ctx, snapshot) {
-                if (!snapshot.hasData) return Text('Waiting...');
-                setState(() {
-                  _transcript = snapshot.data!;
-                });
-                return Text(_transcript);
+              builder: (context, snapshot) {
+                if (snapshot.hasData) {
+                  // setState(() {
+                  _transcript.add(snapshot.data!);
+                  // });
+                }
+                var view = _transcript.isEmpty
+                    ? Text('Empty...')
+                    : Text(_transcript.last);
+                return view;
               },
             ),
           ],
