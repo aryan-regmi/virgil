@@ -5,14 +5,14 @@ import 'dart:ffi';
 
 import 'package:d_bincode/d_bincode.dart';
 import 'package:ffi/ffi.dart';
+import 'package:flutter/foundation.dart';
 import 'package:logger/logger.dart';
+import 'package:virgil/main.dart';
 import 'package:virgil/native.dart';
 
 final _logger = Logger(level: Level.debug);
 
 // TODO: Use writer/reader pools!
-
-// TODO: Add log messages
 
 /// Initalizes the Rust context.
 Future<Context> initalizeContext({
@@ -59,7 +59,14 @@ Future<Context> initalizeContext({
   return ctx;
 }
 
-Future<void> transcribeMicInput(Context ctx, int listenDurationMs) async {
+Future<void> transcribeInIsolate(Context ctx, int listenDurationMs) async {
+  await compute(transcribeMicInput, [ctx, listenDurationMs]);
+}
+
+void transcribeMicInput(List<dynamic> args) {
+  final ctx = args[0];
+  final listenDurationMs = args[1];
+
   // Encode arguments
   final ctxEncoded = BincodeWriter.encode(ctx);
 
@@ -72,7 +79,13 @@ Future<void> transcribeMicInput(Context ctx, int listenDurationMs) async {
   ctxBytes.setAll(0, ctxEncoded);
 
   // Call Rust function
-  transcribeSpeech(ctxPtr.cast(), ctxEncoded.length, listenDurationMs);
+  final callbackPtr = Pointer.fromFunction<RustCallbackNativeFn>(rustCallback);
+  transcribeSpeech(
+    ctxPtr.cast(),
+    ctxEncoded.length,
+    listenDurationMs,
+    callbackPtr,
+  );
 
   // Free allocations
   _freeAllocs(dartAllocs: dartAllocs, nativeAllocs: {});

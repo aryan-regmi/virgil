@@ -4,6 +4,7 @@ library;
 import 'dart:ffi';
 
 import 'package:d_bincode/d_bincode.dart';
+import 'package:ffi/ffi.dart';
 
 /// The Rust library for communication.
 // final _lib = DynamicLibrary.open('libnative.so');
@@ -81,6 +82,24 @@ class WakeWords implements BincodeCodable {
   }
 }
 
+class Transcript implements BincodeCodable {
+  Transcript({required this.text});
+
+  Transcript.empty() : text = '';
+
+  String text;
+
+  @override
+  void decode(BincodeReader reader) {
+    text = reader.readString();
+  }
+
+  @override
+  void encode(BincodeWriter writer) {
+    writer.writeString(text);
+  }
+}
+
 // ==================================================================
 // Function types
 // ==================================================================
@@ -117,17 +136,30 @@ typedef _InitContextFn =
       Pointer<UintPtr> ctxLenOut,
     );
 
+// Define Dart callback signature
+typedef RustCallbackNativeFn = Void Function(Pointer<Utf8>);
+typedef RustCallbackFn = void Function(Pointer<Utf8>);
+
 // fn transcribe_speech(
 //     ctx: *mut ffi::c_void,
 //     ctx_len: usize,
 //     listen_duration_ms: usize,
-//     // ctx_out: *mut ffi::c_void,
-//     // ctx_len_out: *mut usize,
+//     callback_fn: DartCallback,
 // )
 typedef _TranscribeSpeechNativeFn =
-    Void Function(Pointer<Void> ctx, UintPtr ctxLen, UintPtr listenDurationMs);
+    Void Function(
+      Pointer<Void> ctx,
+      UintPtr ctxLen,
+      UintPtr listenDurationMs,
+      Pointer<NativeFunction<RustCallbackNativeFn>>,
+    );
 typedef _TranscribeSpeechFn =
-    void Function(Pointer<Void> ctx, int ctxLen, int listenDurationMs);
+    void Function(
+      Pointer<Void> ctx,
+      int ctxLen,
+      int listenDurationMs,
+      Pointer<NativeFunction<RustCallbackNativeFn>>,
+    );
 
 // ==================================================================
 // Function Bindings

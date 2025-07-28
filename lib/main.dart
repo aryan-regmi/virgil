@@ -1,4 +1,9 @@
+import 'dart:async';
+import 'dart:ffi';
+
+import 'package:ffi/ffi.dart';
 import 'package:flutter/material.dart';
+import 'package:logger/web.dart';
 import 'package:virgil/model_manager.dart';
 import 'package:virgil/native.dart';
 import 'package:virgil/rust_bridge.dart';
@@ -33,11 +38,19 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
+// final _logger = Logger();
+String transcript = '';
+void rustCallback(Pointer<Utf8> textPtr) {
+  transcript = textPtr.toDartString();
+  _HomePageState._streamController.add(transcript);
+}
+
 /// The state of the home page.
 class _HomePageState extends State<HomePage> {
-  final LogLevel _level = LogLevel.debug;
+  final LogLevel _level = LogLevel.info;
   Context? _ctx;
-  String transcript = '';
+  String _transcript = '';
+  static final _streamController = StreamController<String>.broadcast();
 
   @override
   void initState() {
@@ -64,28 +77,11 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    // final listenBtn = ElevatedButton(
-    //   onPressed: () async {
-    //     final listenDurationMs = 1000;
-    //     if (_ctx != null) {
-    //       final textStream = transcribe(_ctx!, listenDurationMs);
-    //       while (true) {
-    //         await for (final text in textStream) {
-    //           setState(() {
-    //             transcript = text;
-    //           });
-    //           await Future.delayed(Duration(milliseconds: listenDurationMs));
-    //         }
-    //       }
-    //     }
-    //   },
-    //   child: Text('Listen'),
-    // );
-
     final listenBtn = ElevatedButton(
       onPressed: () async {
-        if (_ctx != null) {}
-        await transcribeMicInput(_ctx!, 1000);
+        if (_ctx != null) {
+          await transcribeInIsolate(_ctx!, 1000);
+        }
       },
       child: Text('Listen'),
     );
@@ -100,9 +96,16 @@ class _HomePageState extends State<HomePage> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
             listenBtn,
-            transcript.isNotEmpty
-                ? Text('Transcript: $transcript')
-                : Text('Waiting...'),
+            StreamBuilder(
+              stream: _streamController.stream,
+              builder: (ctx, snapshot) {
+                if (!snapshot.hasData) return Text('Waiting...');
+                setState(() {
+                  _transcript = snapshot.data!;
+                });
+                return Text(_transcript);
+              },
+            ),
           ],
         ),
       ),

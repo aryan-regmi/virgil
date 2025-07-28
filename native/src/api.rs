@@ -1,4 +1,4 @@
-use std::{ffi, ptr::slice_from_raw_parts_mut, time::Duration};
+use std::{ffi, ptr::slice_from_raw_parts_mut, str::FromStr, time::Duration};
 
 use cpal::traits::StreamTrait;
 use tokio::{
@@ -93,14 +93,19 @@ pub fn init_context(
     encoded_ctx
 }
 
+/// A callback passed to Rust from Dart.
+pub type TranscribedCallback = extern "C" fn(*mut ffi::c_char);
+
+// FIXME: Do this in a background thread?
+//
 /// Turns microphone input into text.
+#[allow(unused_assignments, unused_variables)]
 #[unsafe(no_mangle)]
 pub fn transcribe_speech(
     ctx: *mut ffi::c_void,
     ctx_len: usize,
     listen_duration_ms: usize,
-    // ctx_out: *mut ffi::c_void,
-    // ctx_len_out: *mut usize,
+    callback_fn: TranscribedCallback,
 ) {
     let span = span!(Level::TRACE, "listen");
     let _enter = span.enter();
@@ -150,6 +155,7 @@ pub fn transcribe_speech(
 
     let desired_num_samples = (listen_duration_ms as usize / 1000) * EXPECTED_SAMPLE_RATE + 200;
     let mut accumulated_audio = Vec::with_capacity(desired_num_samples);
+    let mut transcript = ffi::CString::new("").map_err(|e| error!("{e}")).unwrap();
     loop {
         while let Ok(audio_data) = input_audio_rx.try_recv() {
             let accumulated_samples = accumulated_audio.len();
@@ -174,9 +180,17 @@ pub fn transcribe_speech(
                 // FIXME: Handle multiple channels
 
                 // Process data
-                process_audio_data(&mut model, &accumulated_audio, &ctx.wake_words)
+                let text = process_audio_data(&mut model, &accumulated_audio, &ctx.wake_words)
                     .map_err(|e| error!("Unable to process audio: {e}"))
                     .unwrap();
+
+                // Send transcript to Dart
+                transcript = ffi::CString::from_str(&text)
+                    .map_err(|e| error!("{e}"))
+                    .unwrap();
+                callback_fn(transcript.as_ptr().cast_mut());
+                debug!("Transcript updated");
+                // transcript.clear();
 
                 // Reset accumulated data and fill with remaining/overflowing samples
                 debug!("Accumulated data reset");
@@ -196,7 +210,7 @@ fn process_audio_data(
     model: &mut WhisperState,
     audio_data: &[f32],
     wake_words: &Vec<String>,
-) -> VirgilResult<()> {
+) -> VirgilResult<String> {
     let span = span!(Level::TRACE, "process_audio_data");
     let _enter = span.enter();
 
@@ -207,15 +221,8 @@ fn process_audio_data(
     if wake_word_detected {
         info!("Wake word detected");
     }
+    // FIXME: Move into wake_word_detected check
+    let text = transcribe(model, params, audio_data)?;
 
-    // TODO: Move into wake_word_detected check
-    let text = {
-        let text = transcribe(model, params, audio_data)?;
-        text
-    };
-    if !text.is_empty() && text != "[BLANK_AUDIO]" {
-        debug!("Text transcribed: {text}");
-    }
-
-    Ok(())
+    Ok(text)
 }
