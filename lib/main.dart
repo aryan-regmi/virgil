@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:virgil/model_manager.dart';
 import 'package:virgil/native.dart';
@@ -43,7 +41,7 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
-    setupLogs();
+    setupLogs(2);
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final modelManager = await ModelManager.init();
@@ -65,20 +63,28 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
+    // final listenBtn = ElevatedButton(
+    //   onPressed: () async {
+    //     final listenDurationMs = 1000;
+    //     if (_ctx != null) {
+    //       final textStream = transcribe(_ctx!, listenDurationMs);
+    //       while (true) {
+    //         await for (final text in textStream) {
+    //           setState(() {
+    //             transcript = text;
+    //           });
+    //           await Future.delayed(Duration(milliseconds: listenDurationMs));
+    //         }
+    //       }
+    //     }
+    //   },
+    //   child: Text('Listen'),
+    // );
+
     final listenBtn = ElevatedButton(
       onPressed: () async {
-        final listenDurationMs = 1000;
-        if (_ctx != null) {
-          final textStream = transcribe(_ctx!, listenDurationMs);
-          while (true) {
-            await for (final text in textStream) {
-              setState(() {
-                transcript = text;
-              });
-              await Future.delayed(Duration(milliseconds: listenDurationMs));
-            }
-          }
-        }
+        if (_ctx != null) {}
+        await listenToMic(_ctx!, 1000);
       },
       child: Text('Listen'),
     );

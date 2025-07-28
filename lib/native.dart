@@ -83,9 +83,21 @@ class WakeWords implements BincodeCodable {
 // Function types
 // ==================================================================
 
-// fn setup_logs()
-typedef _SetupLogsNativeFn = Void Function();
-typedef _SetupLogsFn = void Function();
+// TODO: REMOVE
+//
+// fn listen(
+//     ctx: *mut ffi::c_void,
+//     ctx_len: usize,
+//     listen_duration_ms: usize,
+// )
+typedef _ListenNativeFn =
+    Void Function(Pointer<Void> ctx, UintPtr ctxLen, UintPtr listenDurationMs);
+typedef _ListenFn =
+    void Function(Pointer<Void> ctx, int ctxLen, int listenDurationMs);
+
+// fn setup_logs(level: usize)
+typedef _SetupLogsNativeFn = Void Function(UintPtr);
+typedef _SetupLogsFn = void Function(int);
 
 // fn free_rust_ptr(ptr: *const ffi::c_void, len: usize)
 typedef _FreeRustPtrNativeFn = Void Function(Pointer<Void> ptr, UintPtr len);
@@ -183,3 +195,5 @@ final transcribeSpeech = _lib
     .lookupFunction<_TranscribeSpeechNativeFn, _TranscribeSpeechFn>(
       'transcribe_speech',
     );
+
+final listen = _lib.lookupFunction<_ListenNativeFn, _ListenFn>('listen');

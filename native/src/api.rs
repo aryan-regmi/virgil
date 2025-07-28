@@ -10,7 +10,7 @@ use tokio::{
     sync::mpsc::{self, Receiver, Sender},
     time::sleep,
 };
-use tracing::{Level, error, span, trace};
+use tracing::{Level, debug, error, span, trace};
 use tracing_subscriber::{filter, layer::SubscriberExt, util::SubscriberInitExt};
 use whisper_rs::{FullParams, SamplingStrategy, WhisperState, install_logging_hooks};
 
@@ -21,16 +21,25 @@ use crate::utils::{
 
 /// Sets up logging for the library.
 #[unsafe(no_mangle)]
-pub fn setup_logs() {
+pub fn setup_logs(level: usize) {
+    let log_level = match level {
+        0 => Level::TRACE,
+        1 => Level::DEBUG,
+        2 => Level::INFO,
+        3 => Level::WARN,
+        4 => Level::ERROR,
+        _ => Level::TRACE,
+    };
+
     // Suppress logs from `whisper.cpp`.
     install_logging_hooks();
 
     // Filter specific crates by log levels
     let filter = filter::Targets::new()
-        .with_target("native", Level::TRACE)
+        .with_target("native", log_level)
         .with_target("whisper-rs", Level::ERROR);
     tracing_subscriber::registry()
-        .with(filter)
+        // .with(filter)
         .with(
             tracing_subscriber::fmt::layer()
                 .with_line_number(true)
@@ -67,12 +76,12 @@ pub fn init_context(
     let model_path: String = deserialize(model_path, model_path_len)
         .map_err(|e| error!("{e}"))
         .unwrap();
-    trace!("Model path decoded: {model_path}");
+    debug!("Model path decoded: {model_path}");
 
     let wake_words: Vec<String> = deserialize(wake_words, wake_words_len)
         .map_err(|e| error!("{e}"))
         .unwrap();
-    trace!("Wake words decoded: {wake_words:?}");
+    debug!("Wake words decoded: {wake_words:?}");
 
     // Encode context
     let transcript_capacity = 1024;
@@ -84,7 +93,7 @@ pub fn init_context(
     let encoded_ctx = serialize(ctx, ctx_len_out)
         .map_err(|e| error!("{e}"))
         .unwrap();
-    trace!("Context encoded");
+    debug!("Context encoded");
 
     encoded_ctx
 }

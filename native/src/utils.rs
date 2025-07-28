@@ -7,7 +7,7 @@ use cpal::{
 };
 use thiserror::Error;
 use tokio::sync::mpsc;
-use tracing::{Level, error, info, span, trace};
+use tracing::{Level, error, info, span};
 use whisper_rs::{FullParams, WhisperContext, WhisperContextParameters, WhisperState};
 
 use crate::messages::Message;
@@ -60,7 +60,7 @@ pub fn deserialize<T: Decode<()>>(ptr: *mut ffi::c_void, len: usize) -> VirgilRe
     Ok(decoded)
 }
 
-/// The expected sample rate and buffer size.
+/// The expected sample rate of the microphone.
 pub const EXPECTED_SAMPLE_RATE: usize = 16_000;
 
 /// Initialize the `Whisper` model.
@@ -133,7 +133,6 @@ pub fn init_microphone(audio_data_tx: mpsc::Sender<Vec<f32>>) -> VirgilResult<St
         .try_with_sample_rate(SampleRate(EXPECTED_SAMPLE_RATE as u32))
         .ok_or_else(|| MicrophoneConfigError(format!("No supported configs found with the the specified sample rate: {EXPECTED_SAMPLE_RATE} Hz")))?
         .config();
-    info!("Microphone initalized");
 
     // Initialize input stream
     fn input_stream_listener(sender: mpsc::Sender<Vec<f32>>, data: &[f32]) {
@@ -144,18 +143,16 @@ pub fn init_microphone(audio_data_tx: mpsc::Sender<Vec<f32>>) -> VirgilResult<St
             .map_err(|e| error!("Unable to send audio data: {e}"))
             .unwrap()
     }
-    let stream = microphone
-        .build_input_stream(
-            &config,
-            move |data: &[f32], _: &InputCallbackInfo| {
-                input_stream_listener(audio_data_tx.clone(), data)
-            },
-            move |err| error!("{err}"),
-            None,
-        )
-        .map_err(|e| error!("Unable to initialize microphone input stream: {e}"))
-        .unwrap();
+    let stream = microphone.build_input_stream(
+        &config,
+        move |data: &[f32], _: &InputCallbackInfo| {
+            input_stream_listener(audio_data_tx.clone(), data)
+        },
+        move |err| error!("MicrophoneListenerError: {err}"),
+        None,
+    )?;
 
+    info!("Microphone initalized");
     Ok(stream)
 }
 
@@ -196,7 +193,6 @@ pub async fn accumulate_audio_data(
             accumulated_data.clear();
         }
     }
-    trace!("Finished accumulation");
     Ok(())
 }
 
