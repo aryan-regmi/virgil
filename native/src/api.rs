@@ -1,4 +1,4 @@
-use std::{ffi, ptr::slice_from_raw_parts_mut, str::FromStr, time::Duration};
+use std::{ffi, ptr::slice_from_raw_parts_mut, time::Duration};
 
 use cpal::traits::StreamTrait;
 use tokio::{
@@ -93,20 +93,17 @@ pub fn init_context(
     encoded_ctx
 }
 
-/// A callback passed to Rust from Dart.
-pub type TranscribedCallback = extern "C" fn(*mut ffi::c_void, usize);
-
 // FIXME: Do this in a background thread?
 //
 /// Turns microphone input into text.
-#[allow(unused_assignments, unused_variables)]
+// #[allow(unused_assignments, unused_variables)]
 #[unsafe(no_mangle)]
 pub fn transcribe_speech(
     ctx: *mut ffi::c_void,
     ctx_len: usize,
     listen_duration_ms: usize,
-    callback_fn: TranscribedCallback,
-) {
+    transcript_len_out: *mut usize,
+) -> *mut ffi::c_void {
     let span = span!(Level::TRACE, "listen");
     let _enter = span.enter();
 
@@ -152,56 +149,52 @@ pub fn transcribe_speech(
             tokio::time::sleep(Duration::from_millis(listen_duration_ms)).await;
         }
     });
+    std::thread::sleep(Duration::from_millis(listen_duration_ms));
 
+    // Process audio
     let desired_num_samples = (listen_duration_ms as usize / 1000) * EXPECTED_SAMPLE_RATE + 200;
     let mut accumulated_audio = Vec::with_capacity(desired_num_samples);
-    loop {
-        while let Ok(audio_data) = input_audio_rx.try_recv() {
-            let accumulated_samples = accumulated_audio.len();
-            let samples_to_add = audio_data.len();
-            let num_samples = accumulated_samples + samples_to_add;
+    let mut transcript = String::with_capacity(2048);
+    while let Ok(audio_data) = input_audio_rx.try_recv() {
+        let accumulated_samples = accumulated_audio.len();
+        let samples_to_add = audio_data.len();
+        let num_samples = accumulated_samples + samples_to_add;
 
-            // Accumulate audio data until desired length is reached
-            if num_samples < desired_num_samples {
-                accumulated_audio.extend_from_slice(&audio_data);
-                continue;
-            }
-
-            // If more than desired samples, send exact amount then restart accumulation
-            if num_samples >= desired_num_samples {
-                let extra = num_samples - desired_num_samples;
-                let end_idx = samples_to_add - extra;
-
-                // Send desired number of samples
-                accumulated_audio.extend_from_slice(&audio_data[0..end_idx]);
-                debug!("Accumulated {} samples", accumulated_audio.len());
-
-                // FIXME: Handle multiple channels
-
-                // Process data
-                let text = process_audio_data(&mut model, &accumulated_audio, &ctx.wake_words)
-                    .map_err(|e| error!("Unable to process audio: {e}"))
-                    .unwrap();
-
-                // Send transcript to Dart
-                let mut text_len = 0_usize;
-                let encoded_text = serialize(text, (&mut text_len) as *mut usize)
-                    .map_err(|e| error!("{e}"))
-                    .unwrap();
-                callback_fn(encoded_text, text_len);
-                debug!("Transcript updated");
-
-                // Reset accumulated data and fill with remaining/overflowing samples
-                debug!("Accumulated data reset");
-                accumulated_audio.clear();
-                accumulated_audio.extend_from_slice(&audio_data[end_idx..]);
-
-                continue;
-            }
+        // Accumulate audio data until desired length is reached
+        if num_samples < desired_num_samples {
+            accumulated_audio.extend_from_slice(&audio_data);
+            continue;
         }
 
-        std::thread::sleep(Duration::from_millis(listen_duration_ms));
+        // If more than desired samples, send exact amount then restart accumulation
+        if num_samples >= desired_num_samples {
+            let extra = num_samples - desired_num_samples;
+            let end_idx = samples_to_add - extra;
+
+            // Send desired number of samples
+            accumulated_audio.extend_from_slice(&audio_data[0..end_idx]);
+            debug!("Accumulated {} samples", accumulated_audio.len());
+
+            // FIXME: Handle multiple channels
+
+            // Process data
+            let text = process_audio_data(&mut model, &accumulated_audio, &ctx.wake_words)
+                .map_err(|e| error!("Unable to process audio: {e}"))
+                .unwrap();
+            transcript.push_str(&text);
+
+            // Reset accumulated data and fill with remaining/overflowing samples
+            debug!("Accumulated data reset");
+            accumulated_audio.clear();
+            accumulated_audio.extend_from_slice(&audio_data[end_idx..]);
+
+            continue;
+        }
     }
+
+    serialize(transcript, transcript_len_out)
+        .map_err(|e| error!("{e}"))
+        .unwrap()
 }
 
 /// Processes the audio data by transcibing audio data if wake words are detected.

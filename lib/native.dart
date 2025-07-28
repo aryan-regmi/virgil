@@ -4,7 +4,6 @@ library;
 import 'dart:ffi';
 
 import 'package:d_bincode/d_bincode.dart';
-import 'package:ffi/ffi.dart';
 
 /// The Rust library for communication.
 // final _lib = DynamicLibrary.open('libnative.so');
@@ -136,29 +135,25 @@ typedef _InitContextFn =
       Pointer<UintPtr> ctxLenOut,
     );
 
-// Define Dart callback signature
-typedef RustCallbackNativeFn = Void Function(Pointer<Void>, UintPtr);
-typedef RustCallbackFn = void Function(Pointer<Void>, int);
-
 // fn transcribe_speech(
 //     ctx: *mut ffi::c_void,
 //     ctx_len: usize,
 //     listen_duration_ms: usize,
-//     callback_fn: DartCallback,
-// )
+//     ctx_len_out: *mut usize,
+// ) -> *mut ffi::c_void
 typedef _TranscribeSpeechNativeFn =
-    Void Function(
+    Pointer<Void> Function(
       Pointer<Void> ctx,
       UintPtr ctxLen,
       UintPtr listenDurationMs,
-      Pointer<NativeFunction<RustCallbackNativeFn>>,
+      Pointer<UintPtr>,
     );
 typedef _TranscribeSpeechFn =
-    void Function(
+    Pointer<Void> Function(
       Pointer<Void> ctx,
       int ctxLen,
       int listenDurationMs,
-      Pointer<NativeFunction<RustCallbackNativeFn>>,
+      Pointer<UintPtr>,
     );
 
 // ==================================================================
