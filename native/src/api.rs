@@ -1,25 +1,23 @@
 use std::{
     ffi,
     ptr::slice_from_raw_parts_mut,
-    sync::{LazyLock, Mutex},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use cpal::{Stream, traits::StreamTrait};
-use tokio::{runtime::Runtime, sync::mpsc, time::sleep};
+use tokio::{
+    runtime::Runtime,
+    sync::mpsc::{self, Receiver, Sender},
+    time::sleep,
+};
 use tracing::{Level, error, span, trace};
 use tracing_subscriber::{filter, layer::SubscriberExt, util::SubscriberInitExt};
 use whisper_rs::{FullParams, SamplingStrategy, WhisperState, install_logging_hooks};
 
 use crate::utils::{
-    Context, EXPECTED_SAMPLE_RATE, accumulate_audio_data, deserialize, detect_wake_words,
-    init_microphone, init_model, serialize,
+    Context, EXPECTED_SAMPLE_RATE, VirgilResult, accumulate_audio_data, deserialize,
+    detect_wake_words, init_microphone, init_model, serialize, transcribe,
 };
-
-struct Model {
-    state: Option<WhisperState>,
-}
-const MODEL: LazyLock<Mutex<Model>> = LazyLock::new(|| Mutex::new(Model { state: None }));
 
 /// Sets up logging for the library.
 #[unsafe(no_mangle)]
@@ -79,6 +77,7 @@ pub fn init_context(
     // Encode context
     let transcript_capacity = 1024;
     let ctx = Context {
+        model_path,
         wake_words,
         transcript: String::with_capacity(transcript_capacity),
     };
@@ -87,11 +86,6 @@ pub fn init_context(
         .unwrap();
     trace!("Context encoded");
 
-    // Update model
-    let model = MODEL;
-    let mut model = model.lock().map_err(|e| error!("{e}")).unwrap();
-    model.state = Some(init_model(&model_path).map_err(|e| error!("{e}")).unwrap());
-
     encoded_ctx
 }
 
@@ -99,14 +93,16 @@ pub fn init_context(
 pub fn transcribe_speech(
     ctx: *mut ffi::c_void,
     ctx_len: usize,
-    timeout_ms: usize,
+    listen_duration_ms: usize,
+    mut _ctx_out: *mut ffi::c_void,
     ctx_len_out: *mut usize,
-) -> *mut ffi::c_void {
+) {
     let span = span!(Level::TRACE, "transcribe_speech");
     let _enter = span.enter();
 
     // Init tokio runtime
     let rt = Runtime::new().map_err(|e| error!("{e}")).unwrap();
+    let _rt_guard = rt.enter();
 
     // Setup channels for communication
     let (input_audio_tx, input_audio_rx) = mpsc::channel::<Vec<f32>>(EXPECTED_SAMPLE_RATE);
@@ -116,6 +112,12 @@ pub fn transcribe_speech(
         .map_err(|e| error!("{e}"))
         .unwrap();
 
+    // Init `Whisper` model
+    let mut model = init_model(&ctx.model_path)
+        .map_err(|e| error!("{e}"))
+        .unwrap();
+    trace!("Model initalized");
+
     // Start listening and transcribe the input
     // Initalize microphone
     let mic = init_microphone(input_audio_tx)
@@ -124,39 +126,85 @@ pub fn transcribe_speech(
 
     // Start listening
     rt.spawn(async move {
-        listen_to_mic(&mic, timeout_ms as u64).await;
+        listen_to_mic(&mic, listen_duration_ms as u64)
+            .await
+            .map_err(|e| error!("{e}"))
+            .unwrap();
     });
 
     // Accumulate audio data
-    let (accumaltor_tx, mut accumaltor_rx) = mpsc::channel::<Vec<f32>>(EXPECTED_SAMPLE_RATE);
-    rt.spawn(async move { accumulate_audio_data(accumaltor_tx, input_audio_rx, timeout_ms) });
+    let (accumaltor_tx, accumaltor_rx) = mpsc::channel::<Vec<f32>>(EXPECTED_SAMPLE_RATE);
+    rt.spawn(
+        async move { accumulate_audio_data(accumaltor_tx, input_audio_rx, listen_duration_ms) },
+    );
 
     // Process the data
+    let (text_tx, mut text_rx) = mpsc::channel::<String>(2048);
+    let wake_words = ctx.wake_words.clone();
     rt.spawn_blocking(async move || {
-        let model = MODEL;
-        let mut model = model.lock().unwrap();
-        if let Some(model) = model.state.as_mut() {
-            while let Some(audio_data) = &accumaltor_rx.recv().await {
-                trace!("Detecting wake words");
-                let wake_word_detected = detect_wake_words(
-                    model,
-                    FullParams::new(SamplingStrategy::Greedy { best_of: 1 }),
-                    audio_data,
-                    &ctx.wake_words,
-                );
-            }
-        }
+        process_audio_data(&mut model, &wake_words, accumaltor_rx, text_tx)
+            .await
+            .map_err(|e| error!("{e}"))
+            .unwrap();
     });
 
-    todo!()
+    // Update the context with the transcribed text
+    let start_time = Instant::now();
+    let timeout = Duration::from_millis(listen_duration_ms as u64);
+    loop {
+        let mut updated_ctx = Context {
+            model_path: ctx.model_path.clone(),
+            wake_words: ctx.wake_words.clone(),
+            transcript: String::new(),
+        };
+
+        if start_time.elapsed() > timeout {
+            _ctx_out = serialize(updated_ctx, ctx_len_out)
+                .map_err(|e| error!("{e}"))
+                .unwrap();
+            continue;
+        }
+
+        while let Ok(text) = text_rx.try_recv() {
+            updated_ctx.transcript = text;
+        }
+    }
 }
 
-async fn listen_to_mic(mic: &Stream, timeout_ms: u64) {
+/// Continuously listens to the microphone for the specified duration.
+async fn listen_to_mic(mic: &Stream, listen_duration_ms: u64) -> VirgilResult<()> {
     // Start listening
-    mic.play().map_err(|e| error!("{e}")).unwrap();
+    mic.play()?;
 
     // Keep the stream alive
     loop {
-        sleep(Duration::from_millis(timeout_ms));
+        sleep(Duration::from_millis(listen_duration_ms)).await;
     }
+}
+
+async fn process_audio_data(
+    model: &mut WhisperState,
+    wake_words: &Vec<String>,
+    mut accumaltor_rx: Receiver<Vec<f32>>,
+    text_tx: Sender<String>,
+) -> VirgilResult<()> {
+    let span = span!(Level::TRACE, "process_audio_data");
+    let _enter = span.enter();
+
+    while let Some(audio_data) = &accumaltor_rx.recv().await {
+        let params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
+
+        trace!("Detecting wake words");
+        let wake_word_detected = detect_wake_words(model, params.clone(), audio_data, wake_words)?;
+
+        if wake_word_detected {
+            trace!("Wake word detected");
+
+            // TODO: Process commands
+            let text = transcribe(model, params, audio_data)?;
+            text_tx.send(text).await?;
+        }
+    }
+
+    Ok(())
 }

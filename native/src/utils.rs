@@ -18,7 +18,7 @@ pub type VirgilResult<T> = Result<T, anyhow::Error>;
 /// The context passed around for FFI functions.
 #[derive(Encode, Decode)]
 pub struct Context {
-    // pub model_path: String,
+    pub model_path: String,
     pub wake_words: Vec<String>,
     pub transcript: String,
 }
