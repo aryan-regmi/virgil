@@ -35,13 +35,14 @@ class HomePage extends StatefulWidget {
 
 /// The state of the home page.
 class _HomePageState extends State<HomePage> {
+  final LogLevel _level = LogLevel.debug;
   Context? _ctx;
   String transcript = '';
 
   @override
   void initState() {
     super.initState();
-    setupLogs(2);
+    setupLogs(_level.index);
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final modelManager = await ModelManager.init();
@@ -84,7 +85,7 @@ class _HomePageState extends State<HomePage> {
     final listenBtn = ElevatedButton(
       onPressed: () async {
         if (_ctx != null) {}
-        await listenToMic(_ctx!, 1000);
+        await transcribeMicInput(_ctx!, 1000);
       },
       child: Text('Listen'),
     );

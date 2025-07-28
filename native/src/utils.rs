@@ -156,46 +156,6 @@ pub fn init_microphone(audio_data_tx: mpsc::Sender<Vec<f32>>) -> VirgilResult<St
     Ok(stream)
 }
 
-// FIXME: Split channels and only handle mono audio!
-//
-/// Accumulates audio data until there are the enough samples for the specified duration.
-pub async fn accumulate_audio_data(
-    sender: mpsc::Sender<Vec<f32>>,
-    mut receiver: mpsc::Receiver<Vec<f32>>,
-    duration_ms: usize,
-) -> VirgilResult<()> {
-    let desired_len = (duration_ms / 1000) * EXPECTED_SAMPLE_RATE;
-    let mut accumulated_data = Vec::with_capacity(desired_len);
-    while let Some(data) = receiver.recv().await {
-        let accumulated = accumulated_data.len();
-        let to_add = data.len();
-        let new_len = accumulated + to_add;
-
-        // Accumulate audio data until desired length is reached
-        if new_len < desired_len {
-            accumulated_data.extend_from_slice(&data);
-            continue;
-        }
-        // More samples than desired
-        else if new_len > desired_len {
-            // Send desired number of samples
-            accumulated_data.extend_from_slice(&data[0..desired_len]);
-            sender.send(accumulated_data.clone()).await?;
-
-            // Reset accumulated_data and fill with extra samples
-            accumulated_data.clear();
-            accumulated_data.extend_from_slice(&data[desired_len..]);
-        }
-        // Exact number of samples (as `desired_len`)
-        else {
-            accumulated_data.extend_from_slice(&data);
-            sender.send(accumulated_data.clone()).await?;
-            accumulated_data.clear();
-        }
-    }
-    Ok(())
-}
-
 pub struct SendStream(pub Stream);
 unsafe impl Send for SendStream {}
 unsafe impl Sync for SendStream {}

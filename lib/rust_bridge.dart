@@ -59,7 +59,7 @@ Future<Context> initalizeContext({
   return ctx;
 }
 
-Future<void> listenToMic(Context ctx, int listenDurationMs) async {
+Future<void> transcribeMicInput(Context ctx, int listenDurationMs) async {
   // Encode arguments
   final ctxEncoded = BincodeWriter.encode(ctx);
 
@@ -72,7 +72,7 @@ Future<void> listenToMic(Context ctx, int listenDurationMs) async {
   ctxBytes.setAll(0, ctxEncoded);
 
   // Call Rust function
-  listen(ctxPtr.cast(), ctxEncoded.length, listenDurationMs);
+  transcribeSpeech(ctxPtr.cast(), ctxEncoded.length, listenDurationMs);
 
   // Free allocations
   _freeAllocs(dartAllocs: dartAllocs, nativeAllocs: {});

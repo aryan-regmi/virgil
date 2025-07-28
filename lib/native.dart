@@ -15,6 +15,8 @@ final _lib = DynamicLibrary.open(
 // Native `Message` types
 // ==================================================================
 
+enum LogLevel { trace, debug, info, warn, error }
+
 class Context implements BincodeCodable {
   Context({
     required this.modelPath,
@@ -83,18 +85,6 @@ class WakeWords implements BincodeCodable {
 // Function types
 // ==================================================================
 
-// TODO: REMOVE
-//
-// fn listen(
-//     ctx: *mut ffi::c_void,
-//     ctx_len: usize,
-//     listen_duration_ms: usize,
-// )
-typedef _ListenNativeFn =
-    Void Function(Pointer<Void> ctx, UintPtr ctxLen, UintPtr listenDurationMs);
-typedef _ListenFn =
-    void Function(Pointer<Void> ctx, int ctxLen, int listenDurationMs);
-
 // fn setup_logs(level: usize)
 typedef _SetupLogsNativeFn = Void Function(UintPtr);
 typedef _SetupLogsFn = void Function(int);
@@ -131,25 +121,13 @@ typedef _InitContextFn =
 //     ctx: *mut ffi::c_void,
 //     ctx_len: usize,
 //     listen_duration_ms: usize,
-//     mut _ctx_out: *mut ffi::c_void,
-//     ctx_len_out: *mut usize,
+//     // ctx_out: *mut ffi::c_void,
+//     // ctx_len_out: *mut usize,
 // )
 typedef _TranscribeSpeechNativeFn =
-    Void Function(
-      Pointer<Void> ctx,
-      UintPtr ctxLen,
-      UintPtr listenDurationMs,
-      Pointer<Void> ctxOut,
-      Pointer<UintPtr> ctxLenOut,
-    );
+    Void Function(Pointer<Void> ctx, UintPtr ctxLen, UintPtr listenDurationMs);
 typedef _TranscribeSpeechFn =
-    void Function(
-      Pointer<Void> ctx,
-      int ctxLen,
-      int timeoutMs,
-      Pointer<Void> ctxOut,
-      Pointer<UintPtr> ctxLenOut,
-    );
+    void Function(Pointer<Void> ctx, int ctxLen, int listenDurationMs);
 
 // ==================================================================
 // Function Bindings
@@ -195,5 +173,3 @@ final transcribeSpeech = _lib
     .lookupFunction<_TranscribeSpeechNativeFn, _TranscribeSpeechFn>(
       'transcribe_speech',
     );
-
-final listen = _lib.lookupFunction<_ListenNativeFn, _ListenFn>('listen');
