@@ -4,7 +4,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use cpal::{Stream, traits::StreamTrait};
+use cpal::traits::StreamTrait;
 use tokio::{
     runtime::Runtime,
     sync::mpsc::{self, Receiver, Sender},
@@ -15,7 +15,7 @@ use tracing_subscriber::{filter, layer::SubscriberExt, util::SubscriberInitExt};
 use whisper_rs::{FullParams, SamplingStrategy, WhisperState, install_logging_hooks};
 
 use crate::utils::{
-    Context, EXPECTED_SAMPLE_RATE, VirgilResult, accumulate_audio_data, deserialize,
+    Context, EXPECTED_SAMPLE_RATE, SendStream, VirgilResult, accumulate_audio_data, deserialize,
     detect_wake_words, init_microphone, init_model, serialize, transcribe,
 };
 
@@ -97,7 +97,7 @@ pub fn transcribe_speech(
     listen_duration_ms: usize,
     mut _ctx_out: *mut ffi::c_void,
     ctx_len_out: *mut usize,
-) {
+) -> ! {
     let span = span!(Level::TRACE, "transcribe_speech");
     let _enter = span.enter();
 
@@ -119,14 +119,15 @@ pub fn transcribe_speech(
         .unwrap();
     trace!("Model initalized");
 
-    // Start listening and transcribe the input
     // Initalize microphone
-    let mic = init_microphone(input_audio_tx)
-        .map_err(|e| error!("{e}"))
-        .unwrap();
+    let mic = SendStream(
+        init_microphone(input_audio_tx.clone())
+            .map_err(|e| error!("{e}"))
+            .unwrap(),
+    );
 
     // Start listening
-    rt.spawn(async move {
+    let _h = rt.spawn(async move {
         listen_to_mic(&mic, listen_duration_ms as u64)
             .await
             .map_err(|e| error!("{e}"))
@@ -135,9 +136,9 @@ pub fn transcribe_speech(
 
     // Accumulate audio data
     let (accumaltor_tx, accumaltor_rx) = mpsc::channel::<Vec<f32>>(EXPECTED_SAMPLE_RATE);
-    rt.spawn(
-        async move { accumulate_audio_data(accumaltor_tx, input_audio_rx, listen_duration_ms) },
-    );
+    let _h = rt.spawn(async move {
+        accumulate_audio_data(accumaltor_tx, input_audio_rx, listen_duration_ms)
+    });
 
     // Process the data
     let (text_tx, mut text_rx) = mpsc::channel::<String>(2048);
@@ -167,15 +168,20 @@ pub fn transcribe_speech(
         }
 
         while let Ok(text) = text_rx.try_recv() {
+            // FIXME: Add `max_transcript_len` param and make sure `text` is less than that
             updated_ctx.transcript = text;
         }
     }
 }
 
 /// Continuously listens to the microphone for the specified duration.
-async fn listen_to_mic(mic: &Stream, listen_duration_ms: u64) -> VirgilResult<()> {
+async fn listen_to_mic(mic: &SendStream, listen_duration_ms: u64) -> VirgilResult<()> {
+    let span = span!(Level::TRACE, "listen_to_mic");
+    let _enter = span.enter();
+    trace!("Listening for input...");
+
     // Start listening
-    mic.play()?;
+    mic.0.play()?;
 
     // Keep the stream alive
     loop {

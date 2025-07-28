@@ -7,12 +7,11 @@ use cpal::{
 };
 use thiserror::Error;
 use tokio::sync::mpsc;
-use tracing::{Level, error, info, span};
+use tracing::{Level, error, info, span, trace};
 use whisper_rs::{FullParams, WhisperContext, WhisperContextParameters, WhisperState};
 
 use crate::messages::Message;
 
-#[allow(dead_code)]
 pub type VirgilResult<T> = Result<T, anyhow::Error>;
 
 /// The context passed around for FFI functions.
@@ -93,7 +92,6 @@ pub fn transcribe(
     Ok(transcript)
 }
 
-#[allow(dead_code)]
 /// Check for the specified wake words in the audio data.
 pub fn detect_wake_words(
     model: &mut WhisperState,
@@ -118,7 +116,6 @@ pub fn detect_wake_words(
 #[error("MicrophoneConfigError: {0}")]
 pub struct MicrophoneConfigError(String);
 
-#[allow(dead_code)]
 /// Initializes the microphone.
 pub fn init_microphone(audio_data_tx: mpsc::Sender<Vec<f32>>) -> VirgilResult<Stream> {
     let span = span!(Level::TRACE, "init_microphone");
@@ -162,7 +159,6 @@ pub fn init_microphone(audio_data_tx: mpsc::Sender<Vec<f32>>) -> VirgilResult<St
     Ok(stream)
 }
 
-#[allow(dead_code)]
 // FIXME: Split channels and only handle mono audio!
 //
 /// Accumulates audio data until there are the enough samples for the specified duration.
@@ -200,5 +196,10 @@ pub async fn accumulate_audio_data(
             accumulated_data.clear();
         }
     }
+    trace!("Finished accumulation");
     Ok(())
 }
+
+pub struct SendStream(pub Stream);
+unsafe impl Send for SendStream {}
+unsafe impl Sync for SendStream {}

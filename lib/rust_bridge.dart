@@ -59,12 +59,14 @@ Future<Context> initalizeContext({
   return ctx;
 }
 
-Future<String> transcribe(Context ctx, int timeoutMs) async {
+Stream<String> transcribe(Context ctx, int listenDurationMs) async* {
   // Encode arguments
   final ctxEncoded = BincodeWriter.encode(ctx);
 
   // Allocate memory to send to Rust
+  final maxTranscriptLen = 2048;
   final ctxPtr = calloc.allocate<Uint8>(ctxEncoded.length);
+  final ctxOutPtr = calloc.allocate<Void>(ctxEncoded.length + maxTranscriptLen);
   final ctxLenOutPtr = calloc.allocate<UintPtr>(sizeOf<UintPtr>());
   final dartAllocs = [ctxPtr, ctxLenOutPtr];
 
@@ -73,26 +75,30 @@ Future<String> transcribe(Context ctx, int timeoutMs) async {
   ctxBytes.setAll(0, ctxEncoded);
 
   // Call Rust function
-  final updatedCtxPtr = transcribeSpeech(
+  transcribeSpeech(
     ctxPtr.cast(),
     ctxEncoded.length,
-    timeoutMs,
+    listenDurationMs,
+    ctxOutPtr,
     ctxLenOutPtr,
   );
-  final nativeAllocs = {(updatedCtxPtr, ctxLenOutPtr.value)};
 
-  // Decode and return response
-  final updatedCtxBytesPtr = updatedCtxPtr.cast<Uint8>();
-  final updatedCtxBytes = updatedCtxBytesPtr.asTypedList(ctxLenOutPtr.value);
-  final updatedCtxDecoded = BincodeReader.decode(
-    updatedCtxBytes,
-    Context.empty(),
-  );
+  while (true) {
+    // Decode and return response
+    final updatedCtxBytesPtr = ctxOutPtr.cast<Uint8>();
+    final updatedCtxBytes = updatedCtxBytesPtr.asTypedList(ctxLenOutPtr.value);
+    final updatedCtxDecoded = BincodeReader.decode(
+      updatedCtxBytes,
+      Context.empty(),
+    );
 
-  // Free allocations
-  _freeAllocs(dartAllocs: dartAllocs, nativeAllocs: nativeAllocs);
+    // Free allocations
+    _freeAllocs(dartAllocs: dartAllocs, nativeAllocs: {});
 
-  return updatedCtxDecoded.transcript;
+    if (updatedCtxDecoded.transcript.isNotEmpty) {
+      yield updatedCtxDecoded.transcript;
+    }
+  }
 }
 
 /// Frees the defined allocations.

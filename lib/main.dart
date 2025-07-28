@@ -38,20 +38,19 @@ class HomePage extends StatefulWidget {
 /// The state of the home page.
 class _HomePageState extends State<HomePage> {
   Context? _ctx;
+  String transcript = '';
 
   @override
   void initState() {
     super.initState();
+    setupLogs();
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      // Timer.periodic(Duration(seconds: 1), (_) => setState(() {}));
-
       final modelManager = await ModelManager.init();
       if (modelManager.modelPath != null) {
-        _ctx = Context(
+        _ctx = await initalizeContext(
           modelPath: modelManager.modelPath!,
           wakeWords: ['Wake', 'Test'],
-          transcript: '',
         );
       } else {
         throw Exception('Failed to initalize Whispe model');
@@ -66,21 +65,18 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    // while (true) {
-    //   listenToMic();
-    //   await Future.delayed(Duration(seconds: 2));
-    // }
-
     final listenBtn = ElevatedButton(
       onPressed: () async {
-        while (true) {
-          final listenDurationMs = 1000;
-          if (_ctx != null) {
-            final text = await transcribe(_ctx!, listenDurationMs);
-            setState(() {
-              _ctx!.transcript = text;
-            });
-            await Future.delayed(Duration(milliseconds: listenDurationMs));
+        final listenDurationMs = 1000;
+        if (_ctx != null) {
+          final textStream = transcribe(_ctx!, listenDurationMs);
+          while (true) {
+            await for (final text in textStream) {
+              setState(() {
+                transcript = text;
+              });
+              await Future.delayed(Duration(milliseconds: listenDurationMs));
+            }
           }
         }
       },
@@ -97,8 +93,8 @@ class _HomePageState extends State<HomePage> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
             listenBtn,
-            _ctx != null
-                ? Text('Transcript: ${_ctx!.transcript}')
+            transcript.isNotEmpty
+                ? Text('Transcript: $transcript')
                 : Text('Waiting...'),
           ],
         ),

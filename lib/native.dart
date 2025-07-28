@@ -123,7 +123,7 @@ typedef _InitContextFn =
 //     ctx_len_out: *mut usize,
 // )
 typedef _TranscribeSpeechNativeFn =
-    Pointer<Void> Function(
+    Void Function(
       Pointer<Void> ctx,
       UintPtr ctxLen,
       UintPtr listenDurationMs,
@@ -131,7 +131,7 @@ typedef _TranscribeSpeechNativeFn =
       Pointer<UintPtr> ctxLenOut,
     );
 typedef _TranscribeSpeechFn =
-    Pointer<Void> Function(
+    void Function(
       Pointer<Void> ctx,
       int ctxLen,
       int timeoutMs,
@@ -171,14 +171,6 @@ final freeRustPtr = _lib.lookupFunction<_FreeRustPtrNativeFn, _FreeRustPtrFn>(
 final initContext = _lib.lookupFunction<_InitContextNativeFn, _InitContextFn>(
   'init_context',
 );
-
-// fn transcribe_speech(
-//     ctx: *mut ffi::c_void,
-//     ctx_len: usize,
-//     listen_duration_ms: usize,
-//     mut _ctx_out: *mut ffi::c_void,
-//     ctx_len_out: *mut usize,
-// )
 
 /// Listens continuously to the microphone and transcribes the input if a wake word was detected.
 ///
