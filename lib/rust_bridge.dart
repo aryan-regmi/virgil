@@ -5,14 +5,12 @@ import 'dart:ffi';
 
 import 'package:d_bincode/d_bincode.dart';
 import 'package:ffi/ffi.dart';
-import 'package:flutter/foundation.dart';
-import 'package:logger/logger.dart';
 import 'package:virgil/main.dart';
 import 'package:virgil/native.dart';
 
-final _logger = Logger(level: Level.debug);
-
 // TODO: Use writer/reader pools!
+
+final _logger = logger;
 
 /// Initalizes the Rust context.
 Future<Context> initalizeContext({
@@ -59,12 +57,21 @@ Future<Context> initalizeContext({
   return ctx;
 }
 
-Future<void> transcribeInIsolate(Context ctx, int listenDurationMs) async {
-  transcribeMicInput([ctx, listenDurationMs]);
-  // await compute(transcribeMicInput, [ctx, listenDurationMs]);
+/// Initalizes symbols and ports for FFI communication.
+Future<void> initFFI(int port) async {
+  final initResult = initDartApi(NativeApi.initializeApiDLData);
+  if (initResult != 0) {
+    throw 'Failed to initialize Dart native API';
+  }
+  initDartPostFunc(NativeApi.postCObject);
+  initDartPort(port);
 }
 
-void transcribeMicInput(List<dynamic> args) {
+Future<void> transcribeMicInput(Context ctx, int listenDurationMs) async {
+  _transcribeMicInput([ctx, listenDurationMs]);
+}
+
+void _transcribeMicInput(List<dynamic> args) {
   final ctx = args[0];
   final listenDurationMs = args[1];
 
@@ -80,15 +87,7 @@ void transcribeMicInput(List<dynamic> args) {
   ctxBytes.setAll(0, ctxEncoded);
 
   // Call Rust function
-  final callbackPtr = Pointer.fromFunction<RustCallbackNativeFn>(
-    HomePageState.rustCallback,
-  );
-  transcribeSpeech(
-    ctxPtr.cast(),
-    ctxEncoded.length,
-    listenDurationMs,
-    callbackPtr,
-  );
+  transcribeSpeech(ctxPtr.cast(), ctxEncoded.length, listenDurationMs);
 
   // Free allocations
   _freeAllocs(dartAllocs: dartAllocs, nativeAllocs: {});
@@ -102,10 +101,10 @@ void _freeAllocs({
   for (var ptr in dartAllocs) {
     malloc.free(ptr);
   }
-  _logger.i('Dart allocations freed');
+  _logger.t('Dart allocations freed');
 
   for (var info in nativeAllocs) {
     freeRustPtr(info.$1, info.$2);
   }
-  _logger.i('Native allocations freed');
+  _logger.t('Native allocations freed');
 }

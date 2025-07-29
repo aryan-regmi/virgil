@@ -4,9 +4,8 @@ library;
 import 'dart:ffi';
 
 import 'package:d_bincode/d_bincode.dart';
-import 'package:ffi/ffi.dart';
 
-/// The Rust library for communication.
+/// Load the Rust library for communication.
 // final _lib = DynamicLibrary.open('libnative.so');
 final _lib = DynamicLibrary.open(
   'native/target/release/libnative.so',
@@ -136,30 +135,29 @@ typedef _InitContextFn =
       Pointer<UintPtr> ctxLenOut,
     );
 
-// Define Dart callback signature
-typedef RustCallbackNativeFn = Void Function(Pointer<Void>, UintPtr);
-typedef RustCallbackFn = void Function(Pointer<Void>, int);
+// fn init_dart_api_dl(data: *mut std::ffi::c_void) -> isize
+typedef _InitDartApiNativeFn = IntPtr Function(Pointer<Void> data);
+typedef _InitDartApiFn = int Function(Pointer<Void> data);
+
+// fn init_dart_post_func(func: PostDartObjFn)
+typedef _DartPostFuncType =
+    Pointer<NativeFunction<Int8 Function(Int64, Pointer<Dart_CObject>)>>;
+typedef _InitDartPostFuncNativeFn = Void Function(_DartPostFuncType);
+typedef _InitDartPostFuncFn = void Function(_DartPostFuncType);
+
+// fn init_dart_port(port: DartPort)
+typedef _InitDartPortNativeFn = Void Function(Int64 port);
+typedef _InitDartPortFn = void Function(int port);
 
 // fn transcribe_speech(
-//     ctx: *mut ffi::c_void,
-//     ctx_len: usize,
-//     listen_duration_ms: usize,
-//     callback_fn: DartCallback,
+//   ctx: *mut ffi::c_void,
+//   ctx_len: usize,
+//   listen_duration_ms: usize
 // )
 typedef _TranscribeSpeechNativeFn =
-    Void Function(
-      Pointer<Void> ctx,
-      UintPtr ctxLen,
-      UintPtr listenDurationMs,
-      Pointer<NativeFunction<RustCallbackNativeFn>>,
-    );
+    Void Function(Pointer<Void> ctx, UintPtr ctxLen, UintPtr listenDurationMs);
 typedef _TranscribeSpeechFn =
-    void Function(
-      Pointer<Void> ctx,
-      int ctxLen,
-      int listenDurationMs,
-      Pointer<NativeFunction<RustCallbackNativeFn>>,
-    );
+    void Function(Pointer<Void> ctx, int ctxLen, int listenDurationMs);
 
 // ==================================================================
 // Function Bindings
@@ -189,18 +187,34 @@ final freeRustPtr = _lib.lookupFunction<_FreeRustPtrNativeFn, _FreeRustPtrFn>(
 /// @returns A pointer to the initalized `Context` object.
 ///
 /// # Note
-/// The returned pointer must be deallocated using the [freeResponseNative] function.
+/// The returned pointer must be deallocated using the [freeRustPtr] function.
 final initContext = _lib.lookupFunction<_InitContextNativeFn, _InitContextFn>(
   'init_context',
 );
+
+final initDartPostFunc = _lib
+    .lookupFunction<_InitDartPostFuncNativeFn, _InitDartPostFuncFn>(
+      'init_dart_post_func',
+    );
+
+/// Initalizes the Dart API for FFI communication.
+///
+/// @param data The [nativeApiInitSymbols] pointer from Dart.
+final initDartApi = _lib.lookupFunction<_InitDartApiNativeFn, _InitDartApiFn>(
+  'init_dart_api',
+);
+
+/// Initalizes the Dart port for FFI communication.
+///
+/// @param port The receiver port in Dart.
+final initDartPort = _lib
+    .lookupFunction<_InitDartPortNativeFn, _InitDartPortFn>('init_dart_port');
 
 /// Listens continuously to the microphone and transcribes the input if a wake word was detected.
 ///
 /// @param ctx The current context (must be initalized with [initContext]).
 /// @param ctxLen The length of the context (in bytes).
 /// @param listenDurationMs The number of milliseconds to listen to the microphone.
-/// @param ctxOut The context with the updated transcript, returned by the function.
-/// @param ctxLenOut The length of the returned `ctxOut` (in bytes).
 final transcribeSpeech = _lib
     .lookupFunction<_TranscribeSpeechNativeFn, _TranscribeSpeechFn>(
       'transcribe_speech',

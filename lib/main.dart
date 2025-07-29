@@ -1,10 +1,9 @@
 import 'dart:async';
 import 'dart:ffi';
+import 'dart:isolate';
 
-import 'package:d_bincode/d_bincode.dart';
-import 'package:ffi/ffi.dart';
 import 'package:flutter/material.dart';
-import 'package:logger/web.dart';
+import 'package:logger/logger.dart';
 import 'package:virgil/model_manager.dart';
 import 'package:virgil/native.dart';
 import 'package:virgil/rust_bridge.dart';
@@ -39,33 +38,37 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => HomePageState();
 }
 
-final _logger = Logger();
+final logger = Logger(level: Level.debug);
 
 /// The state of the home page.
 class HomePageState extends State<HomePage> {
   final LogLevel _level = LogLevel.info;
   Context? _ctx;
-  final List<String> _transcript = [];
-  static final _streamController = StreamController<String>.broadcast();
-
-  static void rustCallback(Pointer<Void> textPtr, int textLen) {
-    final textBytes = textPtr.cast<Uint8>().asTypedList(textLen);
-    final decodedTranscript = BincodeReader.decode(
-      textBytes,
-      Transcript.empty(),
-    );
-    _streamController.add(decodedTranscript.text);
-    // _logger.i(decodedTranscript.text);
-    freeRustPtr(textPtr, textLen);
-  }
+  String _transcript = 'Waiting...';
+  late StreamSubscription<dynamic> _portListener;
 
   @override
   void initState() {
     super.initState();
     setupLogs(_level.index);
 
+    /// The port used for FFI communications.
+    final receivePort = ReceivePort();
+
+    // Download Whisper model and initalize Rust context
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      // Timer.periodic(Duration(seconds: 1), (_) => setState(() {}));
+      await initFFI(receivePort.sendPort.nativePort);
+
+      // Setup Port listener
+      _portListener = receivePort.listen((message) {
+        logger.i(message);
+        if (message == null) {
+          logger.e("Invalid message...");
+        }
+        setState(() {
+          _transcript = message;
+        });
+      });
 
       final modelManager = await ModelManager.init();
       if (modelManager.modelPath != null) {
@@ -89,7 +92,7 @@ class HomePageState extends State<HomePage> {
     final listenBtn = ElevatedButton(
       onPressed: () async {
         if (_ctx != null) {
-          await transcribeInIsolate(_ctx!, 1000);
+          await transcribeMicInput(_ctx!, 1000);
         }
       },
       child: Text('Listen'),
@@ -103,23 +106,7 @@ class HomePageState extends State<HomePage> {
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            listenBtn,
-            StreamBuilder<String>(
-              stream: _streamController.stream,
-              builder: (context, snapshot) {
-                if (snapshot.hasData) {
-                  // setState(() {
-                  _transcript.add(snapshot.data!);
-                  // });
-                }
-                var view = _transcript.isEmpty
-                    ? Text('Empty...')
-                    : Text(_transcript.last);
-                return view;
-              },
-            ),
-          ],
+          children: <Widget>[listenBtn, Text(_transcript)],
         ),
       ),
     );

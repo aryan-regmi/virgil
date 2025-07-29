@@ -1,17 +1,26 @@
-use std::{ffi, ptr::slice_from_raw_parts_mut, str::FromStr, time::Duration};
+use std::{
+    ffi,
+    ptr::slice_from_raw_parts_mut,
+    sync::{LazyLock, Mutex, atomic::Ordering},
+    thread,
+    time::Duration,
+};
 
 use cpal::traits::StreamTrait;
 use tokio::{
     runtime::Runtime,
     sync::mpsc::{self},
 };
-use tracing::{Level, debug, error, info, span};
+use tracing::{Level, Span, debug, error, info, span};
 use tracing_subscriber::{filter, layer::SubscriberExt, util::SubscriberInitExt};
 use whisper_rs::{FullParams, SamplingStrategy, WhisperState, install_logging_hooks};
 
-use crate::utils::{
-    Context, EXPECTED_SAMPLE_RATE, SendStream, VirgilResult, deserialize, detect_wake_words,
-    init_microphone, init_model, serialize, transcribe,
+use crate::{
+    port::{DART_PORT, DartCObject, DartPort, send_text_to_dart},
+    utils::{
+        Context, EXPECTED_SAMPLE_RATE, SendStream, VirgilResult, deserialize, detect_wake_words,
+        init_microphone, init_model, serialize, transcribe,
+    },
 };
 
 /// Sets up logging for the library.
@@ -40,7 +49,7 @@ pub fn setup_logs(level: usize) {
                 .with_line_number(true)
                 .with_target(true),
         )
-        .init()
+        .init();
 }
 
 /// Frees the memory allocated by Rust.
@@ -93,31 +102,44 @@ pub fn init_context(
     encoded_ctx
 }
 
-/// A callback passed to Rust from Dart.
-pub type TranscribedCallback = extern "C" fn(*mut ffi::c_void, usize);
+/// Initalizes the Dart Native API.
+#[unsafe(no_mangle)]
+pub fn init_dart_api(data: *mut std::ffi::c_void) -> isize {
+    unsafe { dart_sys::Dart_InitializeApiDL(data) }
+}
+
+pub static DART_POST_FN: LazyLock<Mutex<Option<PostDartObjFn>>> =
+    LazyLock::new(|| Mutex::new(None));
+pub type PostDartObjFn = fn(i64, *mut DartCObject) -> i8;
+
+#[unsafe(no_mangle)]
+pub fn init_dart_post_func(func: PostDartObjFn) {
+    *DART_POST_FN.lock().unwrap() = Some(func);
+}
+
+/// Initalizes the Dart port for communication.
+#[unsafe(no_mangle)]
+pub fn init_dart_port(port: DartPort) {
+    DART_PORT.store(port, Ordering::SeqCst);
+}
 
 // FIXME: Do this in a background thread?
 //
 /// Turns microphone input into text.
-#[allow(unused_assignments, unused_variables)]
 #[unsafe(no_mangle)]
-pub fn transcribe_speech(
-    ctx: *mut ffi::c_void,
-    ctx_len: usize,
-    listen_duration_ms: usize,
-    callback_fn: TranscribedCallback,
-) {
-    let span = span!(Level::TRACE, "listen");
+pub fn transcribe_speech(ctx: *mut ffi::c_void, ctx_len: usize, listen_duration_ms: usize) {
+    let span = span!(Level::TRACE, "transcribe_speech");
     let _enter = span.enter();
 
     let listen_duration_ms = listen_duration_ms as u64;
 
     // Init tokio runtime
-    let rt = Runtime::new().map_err(|e| error!("{e}")).unwrap();
-    let _rt_guard = rt.enter();
+    // let rt = RUNTIME;
+    // let rt = rt.lock().map_err(|e| error!("{e}")).unwrap();
+    let rt = Runtime::new().unwrap();
 
     // Setup channels for communication
-    let (input_audio_tx, mut input_audio_rx) = mpsc::channel::<Vec<f32>>(EXPECTED_SAMPLE_RATE);
+    let (input_audio_tx, input_audio_rx) = mpsc::channel::<Vec<f32>>(EXPECTED_SAMPLE_RATE);
 
     // Decode context
     let ctx: Context = deserialize(ctx, ctx_len)
@@ -126,7 +148,7 @@ pub fn transcribe_speech(
     debug!("Context decoded");
 
     // Init `Whisper` model
-    let mut model = init_model(&ctx.model_path)
+    let model = init_model(&ctx.model_path)
         .map_err(|e| error!("{e}"))
         .unwrap();
 
@@ -153,6 +175,34 @@ pub fn transcribe_speech(
         }
     });
 
+    info!("Processing microphone input...");
+    let parent_span = span.clone();
+    thread::spawn(move || {
+        rt.block_on(async move {
+            tokio::spawn(process(
+                ctx,
+                model,
+                input_audio_rx,
+                listen_duration_ms,
+                parent_span,
+            ));
+
+            // Keep tokio runtime alive
+            futures::future::pending::<()>().await
+        });
+    });
+}
+
+async fn process(
+    ctx: Context,
+    mut model: WhisperState,
+    mut input_audio_rx: mpsc::Receiver<Vec<f32>>,
+    listen_duration_ms: u64,
+    parent_span: Span,
+) {
+    let span = span!(parent: &parent_span, Level::TRACE, "process");
+    let _enter = span.enter();
+
     let desired_num_samples = (listen_duration_ms as usize / 1000) * EXPECTED_SAMPLE_RATE + 200;
     let mut accumulated_audio = Vec::with_capacity(desired_num_samples);
     loop {
@@ -178,17 +228,13 @@ pub fn transcribe_speech(
 
                 // FIXME: Handle multiple channels
 
-                // Process data
-                let text = process_audio_data(&mut model, &accumulated_audio, &ctx.wake_words)
+                // Transcribe data
+                let text = transcribe_audio_data(&mut model, &accumulated_audio, &ctx.wake_words)
                     .map_err(|e| error!("Unable to process audio: {e}"))
                     .unwrap();
 
                 // Send transcript to Dart
-                let mut text_len = 0_usize;
-                let encoded_text = serialize(text, (&mut text_len) as *mut usize)
-                    .map_err(|e| error!("{e}"))
-                    .unwrap();
-                callback_fn(encoded_text, text_len);
+                send_text_to_dart(text);
                 debug!("Transcript updated");
 
                 // Reset accumulated data and fill with remaining/overflowing samples
@@ -205,12 +251,12 @@ pub fn transcribe_speech(
 }
 
 /// Processes the audio data by transcibing audio data if wake words are detected.
-fn process_audio_data(
+fn transcribe_audio_data(
     model: &mut WhisperState,
     audio_data: &[f32],
     wake_words: &Vec<String>,
 ) -> VirgilResult<String> {
-    let span = span!(Level::TRACE, "process_audio_data");
+    let span = span!(Level::TRACE, "transcribe_audio_data");
     let _enter = span.enter();
 
     debug!("Processing {} samples", audio_data.len());

@@ -3,11 +3,11 @@ library;
 
 import 'dart:io';
 
-import 'package:logger/web.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
+import 'package:virgil/main.dart';
 
-final _logger = Logger();
+final _logger = logger;
 
 // TODO: Change models based on locale?
 
