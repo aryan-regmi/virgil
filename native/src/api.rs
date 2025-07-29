@@ -1,10 +1,4 @@
-use std::{
-    ffi,
-    ptr::slice_from_raw_parts_mut,
-    sync::{LazyLock, Mutex, atomic::Ordering},
-    thread,
-    time::Duration,
-};
+use std::{ffi, ptr::slice_from_raw_parts_mut, thread, time::Duration};
 
 use cpal::traits::StreamTrait;
 use tokio::{
@@ -16,7 +10,7 @@ use tracing_subscriber::{filter, layer::SubscriberExt, util::SubscriberInitExt};
 use whisper_rs::{FullParams, SamplingStrategy, WhisperState, install_logging_hooks};
 
 use crate::{
-    port::{DART_PORT, DartCObject, DartPort, send_text_to_dart},
+    port::{DartPort, send_text_to_dart, set_dart_port},
     utils::{
         Context, EXPECTED_SAMPLE_RATE, SendStream, VirgilResult, deserialize, detect_wake_words,
         init_microphone, init_model, serialize, transcribe,
@@ -108,19 +102,10 @@ pub fn init_dart_api(data: *mut std::ffi::c_void) -> isize {
     unsafe { dart_sys::Dart_InitializeApiDL(data) }
 }
 
-pub static DART_POST_FN: LazyLock<Mutex<Option<PostDartObjFn>>> =
-    LazyLock::new(|| Mutex::new(None));
-pub type PostDartObjFn = fn(i64, *mut DartCObject) -> i8;
-
-#[unsafe(no_mangle)]
-pub fn init_dart_post_func(func: PostDartObjFn) {
-    *DART_POST_FN.lock().unwrap() = Some(func);
-}
-
 /// Initalizes the Dart port for communication.
 #[unsafe(no_mangle)]
 pub fn init_dart_port(port: DartPort) {
-    DART_PORT.store(port, Ordering::SeqCst);
+    set_dart_port(port);
 }
 
 // FIXME: Do this in a background thread?
