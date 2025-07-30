@@ -216,10 +216,12 @@ async fn process(
                     .unwrap();
 
                 // Send transcript to Dart
-                send_text_to_dart(text)
-                    .map_err(|e| error!("Unable to send text to Dart: {e}"))
-                    .unwrap();
-                debug!("Transcript updated");
+                if let Some(text) = text {
+                    send_text_to_dart(text)
+                        .map_err(|e| error!("Unable to send text to Dart: {e}"))
+                        .unwrap();
+                    debug!("Transcript sent");
+                }
 
                 // Reset accumulated data and fill with remaining/overflowing samples
                 debug!("Accumulated data reset");
@@ -239,7 +241,7 @@ fn run_model(
     model: &mut WhisperState,
     audio_data: &[f32],
     wake_words: &Vec<String>,
-) -> VirgilResult<String> {
+) -> VirgilResult<Option<String>> {
     let span = span!(Level::TRACE, "run_model");
     let _enter = span.enter();
 
@@ -249,8 +251,8 @@ fn run_model(
     if wake_word_detected {
         info!("Wake word detected");
         let text = transcribe(model, params, audio_data)?;
-        return Ok(text);
+        return Ok(Some(text));
     }
 
-    Ok(String::new())
+    Ok(None)
 }
