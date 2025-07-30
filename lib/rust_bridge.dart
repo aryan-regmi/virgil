@@ -63,7 +63,6 @@ Future<void> initFFI(int port) async {
   if (initResult != 0) {
     throw 'Failed to initialize Dart native API';
   }
-  initDartPostFunc(NativeApi.postCObject);
   initDartPort(port);
 }
 

@@ -119,8 +119,6 @@ pub fn transcribe_speech(ctx: *mut ffi::c_void, ctx_len: usize, listen_duration_
     let listen_duration_ms = listen_duration_ms as u64;
 
     // Init tokio runtime
-    // let rt = RUNTIME;
-    // let rt = rt.lock().map_err(|e| error!("{e}")).unwrap();
     let rt = Runtime::new().unwrap();
 
     // Setup channels for communication
@@ -219,7 +217,9 @@ async fn process(
                     .unwrap();
 
                 // Send transcript to Dart
-                send_text_to_dart(text);
+                send_text_to_dart(text)
+                    .map_err(|e| error!("Unable to send text to Dart: {e}"))
+                    .unwrap();
                 debug!("Transcript updated");
 
                 // Reset accumulated data and fill with remaining/overflowing samples

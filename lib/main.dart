@@ -45,30 +45,30 @@ class HomePageState extends State<HomePage> {
   final LogLevel _level = LogLevel.info;
   Context? _ctx;
   String _transcript = 'Waiting...';
-  late StreamSubscription<dynamic> _portListener;
+  // late StreamSubscription<dynamic> _portListener;
+
+  /// The port used for FFI communications.
+  final _receivePort = ReceivePort();
 
   @override
   void initState() {
     super.initState();
     setupLogs(_level.index);
 
-    /// The port used for FFI communications.
-    final receivePort = ReceivePort();
-
     // Download Whisper model and initalize Rust context
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      await initFFI(receivePort.sendPort.nativePort);
+      await initFFI(_receivePort.sendPort.nativePort);
 
-      // Setup Port listener
-      _portListener = receivePort.listen((message) {
-        logger.i(message);
-        if (message == null) {
-          logger.e("Invalid message...");
-        }
-        setState(() {
-          _transcript = message;
-        });
-      });
+      // // Setup Port listener
+      // _portListener = receivePort.listen((message) {
+      //   logger.i(message);
+      //   if (message == null) {
+      //     logger.e("Invalid message...");
+      //   }
+      //   setState(() {
+      //     _transcript = message;
+      //   });
+      // });
 
       final modelManager = await ModelManager.init();
       if (modelManager.modelPath != null) {
@@ -106,7 +106,22 @@ class HomePageState extends State<HomePage> {
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[listenBtn, Text(_transcript)],
+          children: <Widget>[
+            listenBtn,
+            StreamBuilder(
+              stream: _receivePort,
+              builder: (ctx, snapshot) {
+                if (snapshot.hasData) {
+                  final message = snapshot.data;
+                  if (message == null) {
+                    logger.e("Invalid message...");
+                  }
+                  _transcript = message;
+                }
+                return Text(_transcript);
+              },
+            ),
+          ],
         ),
       ),
     );

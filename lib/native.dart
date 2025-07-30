@@ -135,7 +135,7 @@ typedef _InitContextFn =
       Pointer<UintPtr> ctxLenOut,
     );
 
-// fn init_dart_api_dl(data: *mut std::ffi::c_void) -> isize
+// fn init_dart_api(data: *mut std::ffi::c_void) -> isize
 typedef _InitDartApiNativeFn = IntPtr Function(Pointer<Void> data);
 typedef _InitDartApiFn = int Function(Pointer<Void> data);
 
@@ -192,14 +192,9 @@ final initContext = _lib.lookupFunction<_InitContextNativeFn, _InitContextFn>(
   'init_context',
 );
 
-final initDartPostFunc = _lib
-    .lookupFunction<_InitDartPostFuncNativeFn, _InitDartPostFuncFn>(
-      'init_dart_post_func',
-    );
-
 /// Initalizes the Dart API for FFI communication.
 ///
-/// @param data The [nativeApiInitSymbols] pointer from Dart.
+/// @param data The native API symbols pointer from Dart.
 final initDartApi = _lib.lookupFunction<_InitDartApiNativeFn, _InitDartApiFn>(
   'init_dart_api',
 );
