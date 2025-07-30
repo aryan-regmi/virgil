@@ -1,6 +1,8 @@
-import 'dart:async';
+import 'dart:ffi';
+import 'dart:isolate';
 
 import 'package:flutter/material.dart';
+import 'package:logger/logger.dart';
 import 'package:virgil/model_manager.dart';
 import 'package:virgil/native.dart';
 import 'package:virgil/rust_bridge.dart';
@@ -32,26 +34,46 @@ class HomePage extends StatefulWidget {
   final String title;
 
   @override
-  State<HomePage> createState() => _HomePageState();
+  State<HomePage> createState() => HomePageState();
 }
 
+final logger = Logger(level: Level.debug);
+
 /// The state of the home page.
-class _HomePageState extends State<HomePage> {
+class HomePageState extends State<HomePage> {
+  final LogLevel _level = LogLevel.info;
   Context? _ctx;
+  String _transcript = 'Waiting...';
+  // late StreamSubscription<dynamic> _portListener;
+
+  /// The port used for FFI communications.
+  final _receivePort = ReceivePort();
 
   @override
   void initState() {
     super.initState();
+    setupLogs(_level.index);
 
+    // Download Whisper model and initalize Rust context
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      // Timer.periodic(Duration(seconds: 1), (_) => setState(() {}));
+      await initFFI(_receivePort.sendPort.nativePort);
+
+      // // Setup Port listener
+      // _portListener = receivePort.listen((message) {
+      //   logger.i(message);
+      //   if (message == null) {
+      //     logger.e("Invalid message...");
+      //   }
+      //   setState(() {
+      //     _transcript = message;
+      //   });
+      // });
 
       final modelManager = await ModelManager.init();
       if (modelManager.modelPath != null) {
-        _ctx = Context(
+        _ctx = await initalizeContext(
           modelPath: modelManager.modelPath!,
           wakeWords: ['Wake', 'Test'],
-          transcript: '',
         );
       } else {
         throw Exception('Failed to initalize Whispe model');
@@ -66,22 +88,10 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    // while (true) {
-    //   listenToMic();
-    //   await Future.delayed(Duration(seconds: 2));
-    // }
-
     final listenBtn = ElevatedButton(
       onPressed: () async {
-        while (true) {
-          final listenDurationMs = 1000;
-          if (_ctx != null) {
-            final text = await transcribe(_ctx!, listenDurationMs);
-            setState(() {
-              _ctx!.transcript = text;
-            });
-            await Future.delayed(Duration(milliseconds: listenDurationMs));
-          }
+        if (_ctx != null) {
+          await transcribeMicInput(_ctx!, 1000);
         }
       },
       child: Text('Listen'),
@@ -97,9 +107,19 @@ class _HomePageState extends State<HomePage> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
             listenBtn,
-            _ctx != null
-                ? Text('Transcript: ${_ctx!.transcript}')
-                : Text('Waiting...'),
+            StreamBuilder(
+              stream: _receivePort,
+              builder: (ctx, snapshot) {
+                if (snapshot.hasData) {
+                  final message = snapshot.data;
+                  if (message == null) {
+                    logger.e("Invalid message...");
+                  }
+                  _transcript = message;
+                }
+                return Text(_transcript);
+              },
+            ),
           ],
         ),
       ),

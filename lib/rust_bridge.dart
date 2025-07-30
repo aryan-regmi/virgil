@@ -5,14 +5,12 @@ import 'dart:ffi';
 
 import 'package:d_bincode/d_bincode.dart';
 import 'package:ffi/ffi.dart';
-import 'package:logger/logger.dart';
+import 'package:virgil/main.dart';
 import 'package:virgil/native.dart';
-
-final _logger = Logger(level: Level.debug);
 
 // TODO: Use writer/reader pools!
 
-// TODO: Add log messages
+final _logger = logger;
 
 /// Initalizes the Rust context.
 Future<Context> initalizeContext({
@@ -59,40 +57,39 @@ Future<Context> initalizeContext({
   return ctx;
 }
 
-Future<String> transcribe(Context ctx, int timeoutMs) async {
+/// Initalizes symbols and ports for FFI communication.
+Future<void> initFFI(int port) async {
+  final initResult = initDartApi(NativeApi.initializeApiDLData);
+  if (initResult != 0) {
+    throw 'Failed to initialize Dart native API';
+  }
+  initDartPort(port);
+}
+
+Future<void> transcribeMicInput(Context ctx, int listenDurationMs) async {
+  _transcribeMicInput([ctx, listenDurationMs]);
+}
+
+void _transcribeMicInput(List<dynamic> args) {
+  final ctx = args[0];
+  final listenDurationMs = args[1];
+
   // Encode arguments
   final ctxEncoded = BincodeWriter.encode(ctx);
 
   // Allocate memory to send to Rust
   final ctxPtr = calloc.allocate<Uint8>(ctxEncoded.length);
-  final ctxLenOutPtr = calloc.allocate<UintPtr>(sizeOf<UintPtr>());
-  final dartAllocs = [ctxPtr, ctxLenOutPtr];
+  final dartAllocs = [ctxPtr];
 
   // Copy encoded message over
   var ctxBytes = ctxPtr.asTypedList(ctxEncoded.length);
   ctxBytes.setAll(0, ctxEncoded);
 
   // Call Rust function
-  final updatedCtxPtr = transcribeSpeech(
-    ctxPtr.cast(),
-    ctxEncoded.length,
-    timeoutMs,
-    ctxLenOutPtr,
-  );
-  final nativeAllocs = {(updatedCtxPtr, ctxLenOutPtr.value)};
-
-  // Decode and return response
-  final updatedCtxBytesPtr = updatedCtxPtr.cast<Uint8>();
-  final updatedCtxBytes = updatedCtxBytesPtr.asTypedList(ctxLenOutPtr.value);
-  final updatedCtxDecoded = BincodeReader.decode(
-    updatedCtxBytes,
-    Context.empty(),
-  );
+  transcribeSpeech(ctxPtr.cast(), ctxEncoded.length, listenDurationMs);
 
   // Free allocations
-  _freeAllocs(dartAllocs: dartAllocs, nativeAllocs: nativeAllocs);
-
-  return updatedCtxDecoded.transcript;
+  _freeAllocs(dartAllocs: dartAllocs, nativeAllocs: {});
 }
 
 /// Frees the defined allocations.
@@ -103,10 +100,10 @@ void _freeAllocs({
   for (var ptr in dartAllocs) {
     malloc.free(ptr);
   }
-  _logger.i('Dart allocations freed');
+  _logger.t('Dart allocations freed');
 
   for (var info in nativeAllocs) {
     freeRustPtr(info.$1, info.$2);
   }
-  _logger.i('Native allocations freed');
+  _logger.t('Native allocations freed');
 }

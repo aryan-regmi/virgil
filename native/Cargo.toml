@@ -7,9 +7,12 @@ edition = "2024"
 crate-type = ["cdylib"]
 
 [dependencies]
-async-ffi = "0.5.0"
+anyhow = "1.0.98"
 bincode = { version = "2.0.1" }
 cpal = "0.16.0"
+dart-sys = "4.1.5"
+futures = "0.3.31"
+thiserror = "2.0.12"
 tokio = { version = "1.46.1", features = ["full"] }
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["std"] }
