@@ -139,12 +139,6 @@ typedef _InitContextFn =
 typedef _InitDartApiNativeFn = IntPtr Function(Pointer<Void> data);
 typedef _InitDartApiFn = int Function(Pointer<Void> data);
 
-// fn init_dart_post_func(func: PostDartObjFn)
-typedef _DartPostFuncType =
-    Pointer<NativeFunction<Int8 Function(Int64, Pointer<Dart_CObject>)>>;
-typedef _InitDartPostFuncNativeFn = Void Function(_DartPostFuncType);
-typedef _InitDartPostFuncFn = void Function(_DartPostFuncType);
-
 // fn init_dart_port(port: DartPort)
 typedef _InitDartPortNativeFn = Void Function(Int64 port);
 typedef _InitDartPortFn = void Function(int port);

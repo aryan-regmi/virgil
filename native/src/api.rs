@@ -108,8 +108,6 @@ pub fn init_dart_port(port: DartPort) {
     set_dart_port(port);
 }
 
-// FIXME: Do this in a background thread?
-//
 /// Turns microphone input into text.
 #[unsafe(no_mangle)]
 pub fn transcribe_speech(ctx: *mut ffi::c_void, ctx_len: usize, listen_duration_ms: usize) {
@@ -176,6 +174,7 @@ pub fn transcribe_speech(ctx: *mut ffi::c_void, ctx_len: usize, listen_duration_
     });
 }
 
+/// Processes the audio data (in a loop) by transcibing audio data if wake words are detected.
 async fn process(
     ctx: Context,
     mut model: WhisperState,
@@ -212,7 +211,7 @@ async fn process(
                 // FIXME: Handle multiple channels
 
                 // Transcribe data
-                let text = transcribe_audio_data(&mut model, &accumulated_audio, &ctx.wake_words)
+                let text = run_model(&mut model, &accumulated_audio, &ctx.wake_words)
                     .map_err(|e| error!("Unable to process audio: {e}"))
                     .unwrap();
 
@@ -235,24 +234,23 @@ async fn process(
     }
 }
 
-/// Processes the audio data by transcibing audio data if wake words are detected.
-fn transcribe_audio_data(
+/// Runs the model and transcibes the audio data.
+fn run_model(
     model: &mut WhisperState,
     audio_data: &[f32],
     wake_words: &Vec<String>,
 ) -> VirgilResult<String> {
-    let span = span!(Level::TRACE, "transcribe_audio_data");
+    let span = span!(Level::TRACE, "run_model");
     let _enter = span.enter();
 
     debug!("Processing {} samples", audio_data.len());
-
     let params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
     let wake_word_detected = detect_wake_words(model, params.clone(), audio_data, wake_words)?;
     if wake_word_detected {
         info!("Wake word detected");
+        let text = transcribe(model, params, audio_data)?;
+        return Ok(text);
     }
-    // FIXME: Move into wake_word_detected check
-    let text = transcribe(model, params, audio_data)?;
 
-    Ok(text)
+    Ok(String::new())
 }
