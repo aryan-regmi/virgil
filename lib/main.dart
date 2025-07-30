@@ -7,6 +7,9 @@ import 'package:virgil/model_manager.dart';
 import 'package:virgil/native.dart';
 import 'package:virgil/rust_bridge.dart';
 
+/// The logger used for the application.
+final logger = Logger(level: Level.debug);
+
 void main() {
   runApp(const Virgil());
 }
@@ -37,14 +40,16 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => HomePageState();
 }
 
-final logger = Logger(level: Level.debug);
-
 /// The state of the home page.
 class HomePageState extends State<HomePage> {
-  final LogLevel _level = LogLevel.info;
+  /// The log level of the native library.
+  final LogLevel _level = LogLevel.debug;
+
+  /// The context passed to the native library.
   Context? _ctx;
+
+  /// The transcript.
   String _transcript = 'Waiting...';
-  // late StreamSubscription<dynamic> _portListener;
 
   /// The port used for FFI communications.
   final _receivePort = ReceivePort();
@@ -57,17 +62,6 @@ class HomePageState extends State<HomePage> {
     // Download Whisper model and initalize Rust context
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await initFFI(_receivePort.sendPort.nativePort);
-
-      // // Setup Port listener
-      // _portListener = receivePort.listen((message) {
-      //   logger.i(message);
-      //   if (message == null) {
-      //     logger.e("Invalid message...");
-      //   }
-      //   setState(() {
-      //     _transcript = message;
-      //   });
-      // });
 
       final modelManager = await ModelManager.init();
       if (modelManager.modelPath != null) {
