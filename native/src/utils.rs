@@ -19,7 +19,6 @@ pub type VirgilResult<T> = Result<T, anyhow::Error>;
 pub struct Context {
     pub model_path: String,
     pub wake_words: Vec<String>,
-    pub transcript: String,
 }
 
 /// Serialize the given encodable value.

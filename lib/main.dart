@@ -70,7 +70,7 @@ class HomePageState extends State<HomePage> {
           wakeWords: ['Wake', 'Test'],
         );
       } else {
-        throw Exception('Failed to initalize Whispe model');
+        throw Exception('Failed to initalize Whisper model');
       }
     });
   }

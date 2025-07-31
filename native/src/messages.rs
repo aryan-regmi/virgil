@@ -25,9 +25,6 @@ impl Message for Vec<String> {
 
 impl Message for Context {
     fn byte_len(&self) -> usize {
-        size_of::<Self>()
-            + self.model_path.byte_len()
-            + self.wake_words.byte_len()
-            + self.transcript.byte_len()
+        size_of::<Self>() + self.model_path.byte_len() + self.wake_words.byte_len()
     }
 }

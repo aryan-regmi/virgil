@@ -20,13 +20,9 @@ enum LogLevel { trace, debug, info, warn, error }
 
 /// The context used for the [nativeLib].
 class Context implements BincodeCodable {
-  Context({
-    required this.modelPath,
-    required this.wakeWords,
-    required this.transcript,
-  });
+  Context({required this.modelPath, required this.wakeWords});
 
-  Context.empty() : modelPath = '', wakeWords = [], transcript = '';
+  Context.empty() : modelPath = '', wakeWords = [];
 
   /// The path to the `Whisper` model.
   String modelPath;
@@ -34,23 +30,16 @@ class Context implements BincodeCodable {
   /// The list of wake words to listen for/wake to.
   List<String> wakeWords;
 
-  // FIXME: REMOVE!
-  //
-  /// The transcribed text.
-  String transcript;
-
   @override
   void decode(BincodeReader reader) {
     modelPath = reader.readString();
     wakeWords = reader.readList(reader.readString);
-    transcript = reader.readString();
   }
 
   @override
   void encode(BincodeWriter writer) {
     writer.writeString(modelPath);
     writer.writeList(wakeWords, writer.writeString);
-    writer.writeString(transcript);
   }
 }
 

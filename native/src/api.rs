@@ -82,11 +82,9 @@ pub fn init_context(
     debug!("Wake words decoded: {wake_words:?}");
 
     // Encode context
-    let transcript_capacity = 1024;
     let ctx = Context {
         model_path,
         wake_words,
-        transcript: String::with_capacity(transcript_capacity),
     };
     let encoded_ctx = serialize(ctx, ctx_len_out)
         .map_err(|e| error!("{e}"))
@@ -250,7 +248,11 @@ fn run_model(
     let wake_word_detected = detect_wake_words(model, params.clone(), audio_data, wake_words)?;
     if wake_word_detected {
         info!("Wake word detected");
+
+        // TODO: Listen for longer when wake word detected!
+
         let text = transcribe(model, params, audio_data)?;
+
         return Ok(Some(text));
     }
 
