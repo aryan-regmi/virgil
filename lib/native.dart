@@ -185,5 +185,5 @@ final initDartPort = nativeLib
 /// @param listenDurationMs The number of milliseconds to listen to the microphone.
 final transcribeSpeech = nativeLib
     .lookupFunction<_TranscribeSpeechNativeFn, _TranscribeSpeechFn>(
-      'transcribe_speech',
+      'transcribe_speech2', // FIXME: Change this to `transcribe_speech`
     );

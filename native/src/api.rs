@@ -13,7 +13,7 @@ use crate::{
     port::{DartPort, send_text_to_dart, set_dart_port},
     utils::{
         Context, EXPECTED_SAMPLE_RATE, SendStream, VirgilResult, deserialize, detect_wake_words,
-        init_microphone, init_model, serialize, transcribe,
+        init_microphone, init_model, listen_low_power_mode, serialize, transcribe,
     },
 };
 
@@ -170,6 +170,27 @@ pub fn transcribe_speech(ctx: *mut ffi::c_void, ctx_len: usize, listen_duration_
             futures::future::pending::<()>().await
         });
     });
+}
+
+#[unsafe(no_mangle)]
+pub fn transcribe_speech2(ctx: *mut ffi::c_void, ctx_len: usize, listen_duration_ms: usize) {
+    let span = span!(Level::TRACE, "transcribe_speech");
+    let _enter = span.enter();
+
+    let listen_duration_ms = listen_duration_ms as u64;
+
+    // Decode context
+    let ctx: Context = deserialize(ctx, ctx_len)
+        .map_err(|e| error!("{e}"))
+        .unwrap();
+    debug!("Context decoded");
+
+    // Init `Whisper` model
+    let model = init_model(&ctx.model_path)
+        .map_err(|e| error!("{e}"))
+        .unwrap();
+
+    listen_low_power_mode(ctx, model, listen_duration_ms);
 }
 
 /// Processes the audio data (in a loop) by transcibing audio data if wake words are detected.
