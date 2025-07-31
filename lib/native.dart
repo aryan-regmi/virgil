@@ -7,7 +7,7 @@ import 'package:d_bincode/d_bincode.dart';
 
 /// Load the Rust library for communication.
 // final _lib = DynamicLibrary.open('libnative.so');
-final _lib = DynamicLibrary.open(
+final nativeLib = DynamicLibrary.open(
   'native/target/release/libnative.so',
 ); // NOTE: FOR LINUX ONLY
 
@@ -15,8 +15,10 @@ final _lib = DynamicLibrary.open(
 // Native `Message` types
 // ==================================================================
 
+/// The log level for the [nativeLib].
 enum LogLevel { trace, debug, info, warn, error }
 
+/// The context used for the [nativeLib].
 class Context implements BincodeCodable {
   Context({
     required this.modelPath,
@@ -26,8 +28,15 @@ class Context implements BincodeCodable {
 
   Context.empty() : modelPath = '', wakeWords = [], transcript = '';
 
+  /// The path to the `Whisper` model.
   String modelPath;
+
+  /// The list of wake words to listen for/wake to.
   List<String> wakeWords;
+
+  // FIXME: REMOVE!
+  //
+  /// The transcribed text.
   String transcript;
 
   @override
@@ -45,6 +54,7 @@ class Context implements BincodeCodable {
   }
 }
 
+/// The model path to be sent to the [nativeLib];
 class ModelPath implements BincodeCodable {
   ModelPath({required this.path});
 
@@ -63,6 +73,7 @@ class ModelPath implements BincodeCodable {
   }
 }
 
+/// The wake words to be sent to the [nativeLib].
 class WakeWords implements BincodeCodable {
   WakeWords({required this.wakeWords});
 
@@ -78,24 +89,6 @@ class WakeWords implements BincodeCodable {
   @override
   void encode(BincodeWriter writer) {
     writer.writeList(wakeWords, writer.writeString);
-  }
-}
-
-class Transcript implements BincodeCodable {
-  Transcript({required this.text});
-
-  Transcript.empty() : text = '';
-
-  String text;
-
-  @override
-  void decode(BincodeReader reader) {
-    text = reader.readString();
-  }
-
-  @override
-  void encode(BincodeWriter writer) {
-    writer.writeString(text);
   }
 }
 
@@ -158,7 +151,7 @@ typedef _TranscribeSpeechFn =
 // ==================================================================
 
 /// Sets up the logging for the Rust library.
-final setupLogs = _lib.lookupFunction<_SetupLogsNativeFn, _SetupLogsFn>(
+final setupLogs = nativeLib.lookupFunction<_SetupLogsNativeFn, _SetupLogsFn>(
   'setup_logs',
 );
 
@@ -166,9 +159,8 @@ final setupLogs = _lib.lookupFunction<_SetupLogsNativeFn, _SetupLogsFn>(
 ///
 /// @param ptr A Rust pointer.
 /// @param len The length of the pointer's contents (in bytes).
-final freeRustPtr = _lib.lookupFunction<_FreeRustPtrNativeFn, _FreeRustPtrFn>(
-  'free_rust_ptr',
-);
+final freeRustPtr = nativeLib
+    .lookupFunction<_FreeRustPtrNativeFn, _FreeRustPtrFn>('free_rust_ptr');
 
 /// Initalizes the application context.
 ///
@@ -182,21 +174,19 @@ final freeRustPtr = _lib.lookupFunction<_FreeRustPtrNativeFn, _FreeRustPtrFn>(
 ///
 /// # Note
 /// The returned pointer must be deallocated using the [freeRustPtr] function.
-final initContext = _lib.lookupFunction<_InitContextNativeFn, _InitContextFn>(
-  'init_context',
-);
+final initContext = nativeLib
+    .lookupFunction<_InitContextNativeFn, _InitContextFn>('init_context');
 
 /// Initalizes the Dart API for FFI communication.
 ///
 /// @param data The native API symbols pointer from Dart.
-final initDartApi = _lib.lookupFunction<_InitDartApiNativeFn, _InitDartApiFn>(
-  'init_dart_api',
-);
+final initDartApi = nativeLib
+    .lookupFunction<_InitDartApiNativeFn, _InitDartApiFn>('init_dart_api');
 
 /// Initalizes the Dart port for FFI communication.
 ///
 /// @param port The receiver port in Dart.
-final initDartPort = _lib
+final initDartPort = nativeLib
     .lookupFunction<_InitDartPortNativeFn, _InitDartPortFn>('init_dart_port');
 
 /// Listens continuously to the microphone and transcribes the input if a wake word was detected.
@@ -204,7 +194,7 @@ final initDartPort = _lib
 /// @param ctx The current context (must be initalized with [initContext]).
 /// @param ctxLen The length of the context (in bytes).
 /// @param listenDurationMs The number of milliseconds to listen to the microphone.
-final transcribeSpeech = _lib
+final transcribeSpeech = nativeLib
     .lookupFunction<_TranscribeSpeechNativeFn, _TranscribeSpeechFn>(
       'transcribe_speech',
     );

@@ -78,6 +78,8 @@ class HomePageState extends State<HomePage> {
   @override
   void dispose() {
     super.dispose();
+    _receivePort.close();
+    logger.close();
   }
 
   @override
