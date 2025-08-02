@@ -10,7 +10,7 @@ use tokio::{
     runtime::Runtime,
     sync::mpsc::{self, Receiver},
 };
-use tracing::{Level, debug, error, info, span};
+use tracing::{Level, debug, error, info, span, trace};
 use whisper_rs::{
     FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters, WhisperState,
 };
@@ -205,6 +205,8 @@ pub fn listen_low_power_mode(ctx: Context, mut model: WhisperState, listen_durat
                             .map_err(|e| error!("{e}"))
                             .unwrap();
                     if wake_word_detected {
+                        info!("Switching to active listening mode");
+
                         // Listen for longer (3 seconds)
                         const ACTIVE_LISTEN_DURATION: Duration = Duration::from_secs(3);
                         mic_duration_tx
@@ -244,6 +246,7 @@ pub fn listen_low_power_mode(ctx: Context, mut model: WhisperState, listen_durat
             futures::future::pending::<()>().await
         });
     });
+    debug!("FINISHED!!");
 }
 
 async fn process_audio<F>(
@@ -282,13 +285,13 @@ async fn process_audio<F>(
 
                 // Send desired number of samples
                 accumulated_audio.extend_from_slice(&audio_data[0..end_idx]);
-                debug!("Accumulated {} samples", accumulated_audio.len());
+                trace!("Accumulated {} samples", accumulated_audio.len());
 
                 // Run callback once desired number of samples are accumulated
                 on_accumulated(&audio_data);
 
                 // Reset accumulated data and fill with remaining/overflowing samples
-                debug!("Accumulated data reset");
+                trace!("Accumulated data reset");
                 accumulated_audio.clear();
                 accumulated_audio.extend_from_slice(&audio_data[end_idx..]);
 

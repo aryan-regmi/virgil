@@ -5,7 +5,7 @@ use tokio::{
     runtime::Runtime,
     sync::mpsc::{self},
 };
-use tracing::{Level, Span, debug, error, info, span};
+use tracing::{Level, Span, debug, error, info, span, trace};
 use tracing_subscriber::{filter, layer::SubscriberExt, util::SubscriberInitExt};
 use whisper_rs::{FullParams, SamplingStrategy, WhisperState, install_logging_hooks};
 
@@ -74,12 +74,12 @@ pub fn init_context(
     let model_path: String = deserialize(model_path, model_path_len)
         .map_err(|e| error!("{e}"))
         .unwrap();
-    debug!("Model path decoded: {model_path}");
+    trace!("Model path decoded: {model_path}");
 
     let wake_words: Vec<String> = deserialize(wake_words, wake_words_len)
         .map_err(|e| error!("{e}"))
         .unwrap();
-    debug!("Wake words decoded: {wake_words:?}");
+    trace!("Wake words decoded: {wake_words:?}");
 
     // Encode context
     let ctx = Context {
@@ -89,7 +89,7 @@ pub fn init_context(
     let encoded_ctx = serialize(ctx, ctx_len_out)
         .map_err(|e| error!("{e}"))
         .unwrap();
-    debug!("Context encoded");
+    trace!("Context encoded");
 
     encoded_ctx
 }
@@ -124,7 +124,7 @@ pub fn transcribe_speech(ctx: *mut ffi::c_void, ctx_len: usize, listen_duration_
     let ctx: Context = deserialize(ctx, ctx_len)
         .map_err(|e| error!("{e}"))
         .unwrap();
-    debug!("Context decoded");
+    trace!("Context decoded");
 
     // Init `Whisper` model
     let model = init_model(&ctx.model_path)
@@ -170,6 +170,7 @@ pub fn transcribe_speech(ctx: *mut ffi::c_void, ctx_len: usize, listen_duration_
             futures::future::pending::<()>().await
         });
     });
+    debug!("THIS FINISHED!");
 }
 
 #[unsafe(no_mangle)]
@@ -183,7 +184,7 @@ pub fn transcribe_speech2(ctx: *mut ffi::c_void, ctx_len: usize, listen_duration
     let ctx: Context = deserialize(ctx, ctx_len)
         .map_err(|e| error!("{e}"))
         .unwrap();
-    debug!("Context decoded");
+    trace!("Context decoded");
 
     // Init `Whisper` model
     let model = init_model(&ctx.model_path)
@@ -225,7 +226,7 @@ async fn process(
 
                 // Send desired number of samples
                 accumulated_audio.extend_from_slice(&audio_data[0..end_idx]);
-                debug!("Accumulated {} samples", accumulated_audio.len());
+                trace!("Accumulated {} samples", accumulated_audio.len());
 
                 // FIXME: Handle multiple channels
 
@@ -243,7 +244,7 @@ async fn process(
                 }
 
                 // Reset accumulated data and fill with remaining/overflowing samples
-                debug!("Accumulated data reset");
+                trace!("Accumulated data reset");
                 accumulated_audio.clear();
                 accumulated_audio.extend_from_slice(&audio_data[end_idx..]);
 
@@ -264,7 +265,7 @@ fn run_model(
     let span = span!(Level::TRACE, "run_model");
     let _enter = span.enter();
 
-    debug!("Processing {} samples", audio_data.len());
+    trace!("Processing {} samples", audio_data.len());
     let params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
     let wake_word_detected = detect_wake_words(model, params.clone(), audio_data, wake_words)?;
     if wake_word_detected {
