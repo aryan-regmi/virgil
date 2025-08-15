@@ -1,4 +1,9 @@
-use std::{ffi, ptr::slice_from_raw_parts_mut, thread, time::Duration};
+use std::{
+    ffi,
+    ptr::slice_from_raw_parts_mut,
+    thread,
+    time::{Duration, Instant},
+};
 
 use cpal::traits::StreamTrait;
 use tokio::{
@@ -183,7 +188,11 @@ async fn process(
     let span = span!(parent: &parent_span, Level::TRACE, "process");
     let _enter = span.enter();
 
-    let desired_num_samples = (listen_duration_ms as usize / 1000) * EXPECTED_SAMPLE_RATE + 200;
+    let mut detected_time = None;
+    let mut wake_word_detected = false;
+    let mut desired_num_samples = (listen_duration_ms as usize / 1000) * EXPECTED_SAMPLE_RATE + 200;
+    let original_desired_num_samples =
+        (listen_duration_ms as usize / 1000) * EXPECTED_SAMPLE_RATE + 200;
     let mut accumulated_audio = Vec::with_capacity(desired_num_samples);
     loop {
         while let Ok(audio_data) = input_audio_rx.try_recv() {
@@ -200,7 +209,8 @@ async fn process(
             // If more than desired samples, send exact amount then restart accumulation
             if num_samples >= desired_num_samples {
                 let extra = num_samples - desired_num_samples;
-                let end_idx = samples_to_add - extra;
+                let end_idx = samples_to_add.abs_diff(extra).min(audio_data.len());
+                // let end_idx = samples_to_add - extra;
 
                 // Send desired number of samples
                 accumulated_audio.extend_from_slice(&audio_data[0..end_idx]);
@@ -209,12 +219,41 @@ async fn process(
                 // FIXME: Handle multiple channels
 
                 // Transcribe data
-                let text = run_model(&mut model, &accumulated_audio, &ctx.wake_words)
-                    .map_err(|e| error!("Unable to process audio: {e}"))
+                // let text = run_model(&mut model, &accumulated_audio, &ctx.wake_words)
+                //     .map_err(|e| error!("Unable to process audio: {e}"))
+                //     .unwrap();
+                let params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
+                if !wake_word_detected {
+                    wake_word_detected = detect_wake_words(
+                        &mut model,
+                        params.clone(),
+                        &accumulated_audio,
+                        &ctx.wake_words,
+                    )
                     .unwrap();
 
-                // Send transcript to Dart
-                if let Some(text) = text {
+                    if wake_word_detected {
+                        info!("Wake word detected");
+                        detected_time = Some(Instant::now());
+                        desired_num_samples += EXPECTED_SAMPLE_RATE;
+                        continue;
+                    }
+                }
+
+                if wake_word_detected {
+                    if let Some(recorded_time) = detected_time {
+                        let elasped = Instant::now() - recorded_time;
+
+                        if elasped >= Duration::from_secs(3) {
+                            wake_word_detected = false;
+                            detected_time = None;
+                            desired_num_samples = original_desired_num_samples;
+                            continue;
+                        }
+                    }
+
+                    // Send transcript to Dart
+                    let text = transcribe(&mut model, params, &accumulated_audio).unwrap();
                     send_text_to_dart(text)
                         .map_err(|e| error!("Unable to send text to Dart: {e}"))
                         .unwrap();
@@ -232,29 +271,4 @@ async fn process(
 
         std::thread::sleep(Duration::from_millis(listen_duration_ms));
     }
-}
-
-/// Runs the model and transcibes the audio data.
-fn run_model(
-    model: &mut WhisperState,
-    audio_data: &[f32],
-    wake_words: &Vec<String>,
-) -> VirgilResult<Option<String>> {
-    let span = span!(Level::TRACE, "run_model");
-    let _enter = span.enter();
-
-    debug!("Processing {} samples", audio_data.len());
-    let params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
-    let wake_word_detected = detect_wake_words(model, params.clone(), audio_data, wake_words)?;
-    if wake_word_detected {
-        info!("Wake word detected");
-
-        // TODO: Listen for longer when wake word detected!
-
-        let text = transcribe(model, params, audio_data)?;
-
-        return Ok(Some(text));
-    }
-
-    Ok(None)
 }
