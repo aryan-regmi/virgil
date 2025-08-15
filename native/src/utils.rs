@@ -137,10 +137,13 @@ pub fn init_microphone(audio_data_tx: mpsc::Sender<Vec<f32>>) -> VirgilResult<St
     fn input_stream_listener(sender: mpsc::Sender<Vec<f32>>, data: &[f32]) {
         let span = span!(Level::TRACE, "input_stream_listener");
         let _enter = span.enter();
-        sender
-            .try_send(data.into())
-            .map_err(|e| error!("Unable to send audio data: {e}"))
-            .unwrap()
+
+        match sender.try_send(data.into()) {
+            Ok(_) => {}
+            Err(e) => {
+                error!("Unable to send audio data: {e}");
+            }
+        }
     }
     let stream = microphone.build_input_stream(
         &config,

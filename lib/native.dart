@@ -135,6 +135,10 @@ typedef _TranscribeSpeechNativeFn =
 typedef _TranscribeSpeechFn =
     void Function(Pointer<Void> ctx, int ctxLen, int listenDurationMs);
 
+// pub fn stop_mic()
+typedef _StopMicNativeFn = Void Function();
+typedef _StopMicFn = void Function();
+
 // ==================================================================
 // Function Bindings
 // ==================================================================
@@ -187,3 +191,8 @@ final transcribeSpeech = nativeLib
     .lookupFunction<_TranscribeSpeechNativeFn, _TranscribeSpeechFn>(
       'transcribe_speech',
     );
+
+/// Stops the microphone.
+final stopMic = nativeLib.lookupFunction<_StopMicNativeFn, _StopMicFn>(
+  'stop_mic',
+);

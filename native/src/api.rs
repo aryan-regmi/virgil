@@ -1,6 +1,7 @@
 use std::{
     ffi,
     ptr::slice_from_raw_parts_mut,
+    sync::LazyLock,
     thread,
     time::{Duration, Instant},
 };
@@ -8,7 +9,10 @@ use std::{
 use cpal::traits::StreamTrait;
 use tokio::{
     runtime::Runtime,
-    sync::mpsc::{self},
+    sync::{
+        Mutex,
+        mpsc::{self},
+    },
 };
 use tracing::{Level, Span, debug, error, info, span};
 use tracing_subscriber::{filter, layer::SubscriberExt, util::SubscriberInitExt};
@@ -17,10 +21,14 @@ use whisper_rs::{FullParams, SamplingStrategy, WhisperState, install_logging_hoo
 use crate::{
     port::{DartPort, send_text_to_dart, set_dart_port},
     utils::{
-        Context, EXPECTED_SAMPLE_RATE, SendStream, VirgilResult, deserialize, detect_wake_words,
-        init_microphone, init_model, serialize, transcribe,
+        Context, EXPECTED_SAMPLE_RATE, SendStream, deserialize, detect_wake_words, init_microphone,
+        init_model, serialize, transcribe,
     },
 };
+
+pub static RUN: LazyLock<Mutex<bool>> = LazyLock::new(|| Mutex::new(false));
+
+pub static LOGS_SET: LazyLock<Mutex<bool>> = LazyLock::new(|| Mutex::new(false));
 
 /// Sets up logging for the library.
 #[unsafe(no_mangle)]
@@ -34,21 +42,26 @@ pub fn setup_logs(level: usize) {
         _ => Level::TRACE,
     };
 
-    // Suppress logs from `whisper.cpp`.
-    install_logging_hooks();
+    let mut logs_set = LOGS_SET.blocking_lock();
+    if *logs_set == false {
+        // Suppress logs from `whisper.cpp`.
+        install_logging_hooks();
 
-    // Filter specific crates by log levels
-    let filter = filter::Targets::new()
-        .with_target("native", log_level)
-        .with_target("whisper-rs", Level::ERROR);
-    tracing_subscriber::registry()
-        .with(filter)
-        .with(
-            tracing_subscriber::fmt::layer()
-                .with_line_number(true)
-                .with_target(true),
-        )
-        .init();
+        // Filter specific crates by log levels
+        let filter = filter::Targets::new()
+            .with_target("native", log_level)
+            .with_target("whisper-rs", Level::ERROR);
+        tracing_subscriber::registry()
+            .with(filter)
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .with_line_number(true)
+                    .with_target(true),
+            )
+            .init();
+
+        *logs_set = true;
+    }
 }
 
 /// Frees the memory allocated by Rust.
@@ -142,6 +155,7 @@ pub fn transcribe_speech(ctx: *mut ffi::c_void, ctx_len: usize, listen_duration_
             .map_err(|e| error!("{e}"))
             .unwrap(),
     );
+    *RUN.blocking_lock() = true;
 
     // Listen to the microphone for the specified amount of time
     rt.spawn(async move {
@@ -163,18 +177,25 @@ pub fn transcribe_speech(ctx: *mut ffi::c_void, ctx_len: usize, listen_duration_
     let parent_span = span.clone();
     thread::spawn(move || {
         rt.block_on(async move {
-            tokio::spawn(process(
-                ctx,
-                model,
-                input_audio_rx,
-                listen_duration_ms,
-                parent_span,
-            ));
-
-            // Keep tokio runtime alive
-            futures::future::pending::<()>().await
+            tokio::select! {
+                _ = tokio::spawn(process(ctx, model, input_audio_rx, listen_duration_ms, parent_span)) => {},
+                _ = futures::future::pending::<()>() => {
+                    if *RUN.lock().await == false {
+                        return;
+                    }
+                },
+            }
         });
     });
+}
+
+/// Stops the microphone.
+#[unsafe(no_mangle)]
+pub fn stop_mic() {
+    let span = span!(Level::TRACE, "stop_mic");
+    let _enter = span.enter();
+    info!("Mic stopped!");
+    *RUN.blocking_lock() = false;
 }
 
 /// Processes the audio data (in a loop) by transcibing audio data if wake words are detected.
@@ -187,6 +208,7 @@ async fn process(
 ) {
     let span = span!(parent: &parent_span, Level::TRACE, "process");
     let _enter = span.enter();
+    info!("Processing audio data...");
 
     let mut detected_time = None;
     let mut wake_word_detected = false;
@@ -194,7 +216,7 @@ async fn process(
     let original_desired_num_samples =
         (listen_duration_ms as usize / 1000) * EXPECTED_SAMPLE_RATE + 200;
     let mut accumulated_audio = Vec::with_capacity(desired_num_samples);
-    loop {
+    while *RUN.lock().await == true {
         while let Ok(audio_data) = input_audio_rx.try_recv() {
             let accumulated_samples = accumulated_audio.len();
             let samples_to_add = audio_data.len();
@@ -219,9 +241,6 @@ async fn process(
                 // FIXME: Handle multiple channels
 
                 // Transcribe data
-                // let text = run_model(&mut model, &accumulated_audio, &ctx.wake_words)
-                //     .map_err(|e| error!("Unable to process audio: {e}"))
-                //     .unwrap();
                 let params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
                 if !wake_word_detected {
                     wake_word_detected = detect_wake_words(
@@ -230,7 +249,8 @@ async fn process(
                         &accumulated_audio,
                         &ctx.wake_words,
                     )
-                    .unwrap();
+                    .map_err(|e| error!("Unable to detected wake words: {e}"))
+                    .unwrap_or_else(|_| false);
 
                     if wake_word_detected {
                         info!("Wake word detected");

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ffi';
 import 'dart:isolate';
 
@@ -43,16 +44,22 @@ class HomePage extends StatefulWidget {
 /// The state of the home page.
 class HomePageState extends State<HomePage> {
   /// The log level of the native library.
-  final LogLevel _level = LogLevel.debug;
+  final LogLevel _level = LogLevel.info;
 
   /// The context passed to the native library.
   Context? _ctx;
 
   /// The transcript.
-  String _transcript = 'Waiting...';
+  String _transcript = _defaultTranscript;
+
+  /// Default transcript message.
+  static const _defaultTranscript = 'Waiting...';
 
   /// The port used for FFI communications.
   final _receivePort = ReceivePort();
+
+  /// Determines if the mic is listening.
+  bool _listening = false;
 
   @override
   void initState() {
@@ -86,11 +93,38 @@ class HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     final listenBtn = ElevatedButton(
       onPressed: () async {
-        if (_ctx != null) {
-          await transcribeMicInput(_ctx!, 1000);
+        if (_listening) {
+          setState(() {
+            _listening = false;
+          });
+          stopMic();
+        } else {
+          if (_ctx != null) {
+            setState(() {
+              _listening = true;
+            });
+            await transcribeMicInput(_ctx!, 1000);
+          }
         }
       },
-      child: Text('Listen'),
+      child: _listening ? Text('Stop') : Text('Listen'),
+    );
+    final streamBuilder = StreamBuilder(
+      stream: _receivePort,
+      builder: (ctx, snapshot) {
+        if (_listening) {
+          if (snapshot.hasData) {
+            String? message = snapshot.data;
+            if (message == null) {
+              logger.e('Invalid message...');
+              return Text('Invalid message');
+            }
+            _transcript = message;
+            return Text(_transcript);
+          }
+        }
+        return Text(_defaultTranscript);
+      },
     );
 
     return Scaffold(
@@ -101,22 +135,7 @@ class HomePageState extends State<HomePage> {
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            listenBtn,
-            StreamBuilder(
-              stream: _receivePort,
-              builder: (ctx, snapshot) {
-                if (snapshot.hasData) {
-                  final message = snapshot.data;
-                  if (message == null) {
-                    logger.e("Invalid message...");
-                  }
-                  _transcript = message;
-                }
-                return Text(_transcript);
-              },
-            ),
-          ],
+          children: <Widget>[listenBtn, streamBuilder],
         ),
       ),
     );
