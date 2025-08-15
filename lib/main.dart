@@ -1,12 +1,7 @@
-import 'dart:async';
-import 'dart:ffi';
-import 'dart:isolate';
-
 import 'package:flutter/material.dart';
 import 'package:logger/logger.dart';
-import 'package:virgil/model_manager.dart';
 import 'package:virgil/native.dart';
-import 'package:virgil/rust_bridge.dart';
+import 'package:virgil/speech_recognition.dart';
 
 /// The logger used for the application.
 final logger = Logger(level: Level.debug);
@@ -43,49 +38,23 @@ class HomePage extends StatefulWidget {
 
 /// The state of the home page.
 class HomePageState extends State<HomePage> {
-  /// The log level of the native library.
-  final LogLevel _level = LogLevel.info;
-
-  /// The context passed to the native library.
-  Context? _ctx;
-
-  /// The transcript.
-  String _transcript = _defaultTranscript;
-
-  /// Default transcript message.
-  static const _defaultTranscript = 'Waiting...';
-
-  /// The port used for FFI communications.
-  final _receivePort = ReceivePort();
-
-  /// Determines if the mic is listening.
-  bool _listening = false;
+  SpeechRecognition speech = SpeechRecognition(LogLevel.info);
+  bool _isListening = false;
 
   @override
   void initState() {
     super.initState();
-    setupLogs(_level.index);
 
     // Download Whisper model and initalize Rust context
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      await initFFI(_receivePort.sendPort.nativePort);
-
-      final modelManager = await ModelManager.init();
-      if (modelManager.modelPath != null) {
-        _ctx = await initalizeContext(
-          modelPath: modelManager.modelPath!,
-          wakeWords: ['Wake', 'Test'],
-        );
-      } else {
-        throw Exception('Failed to initalize Whisper model');
-      }
+      speech.init();
     });
   }
 
   @override
   void dispose() {
     super.dispose();
-    _receivePort.close();
+    speech.dispose();
     logger.close();
   }
 
@@ -93,39 +62,21 @@ class HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     final listenBtn = ElevatedButton(
       onPressed: () async {
-        if (_listening) {
+        if (speech.isListening) {
+          await speech.stopListening();
           setState(() {
-            _listening = false;
+            _isListening = false;
           });
-          stopMic();
         } else {
-          if (_ctx != null) {
-            setState(() {
-              _listening = true;
-            });
-            await transcribeMicInput(_ctx!, 1000);
-          }
+          await speech.startListening();
+          setState(() {
+            _isListening = true;
+          });
         }
       },
-      child: _listening ? Text('Stop') : Text('Listen'),
+      child: _isListening ? Text('Stop') : Text('Listen'),
     );
-    final streamBuilder = StreamBuilder(
-      stream: _receivePort,
-      builder: (ctx, snapshot) {
-        if (_listening) {
-          if (snapshot.hasData) {
-            String? message = snapshot.data;
-            if (message == null) {
-              logger.e('Invalid message...');
-              return Text('Invalid message');
-            }
-            _transcript = message;
-            return Text(_transcript);
-          }
-        }
-        return Text(_defaultTranscript);
-      },
-    );
+    final streamBuilder = speech.streamBuilder();
 
     return Scaffold(
       appBar: AppBar(
