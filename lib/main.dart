@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:logger/logger.dart';
 import 'package:virgil/native.dart';
@@ -40,6 +42,8 @@ class HomePage extends StatefulWidget {
 class HomePageState extends State<HomePage> {
   SpeechRecognition speech = SpeechRecognition(LogLevel.info);
   bool _isListening = false;
+  late Timer _timer;
+  String _transcript = '';
 
   @override
   void initState() {
@@ -67,7 +71,15 @@ class HomePageState extends State<HomePage> {
           setState(() {
             _isListening = false;
           });
+          _timer.cancel();
         } else {
+          _timer = Timer.periodic(Duration(milliseconds: 1000), (_) async {
+            await speech.processCommands();
+            setState(() {
+              _transcript = speech.command == null ? '' : speech.command!;
+            });
+          });
+
           await speech.startListening();
           setState(() {
             _isListening = true;
@@ -76,7 +88,7 @@ class HomePageState extends State<HomePage> {
       },
       child: _isListening ? Text('Stop') : Text('Listen'),
     );
-    final streamBuilder = speech.streamBuilder();
+    // final streamBuilder = speech.streamBuilder();
 
     return Scaffold(
       appBar: AppBar(
@@ -86,7 +98,8 @@ class HomePageState extends State<HomePage> {
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[listenBtn, streamBuilder],
+          // children: <Widget>[listenBtn, streamBuilder],
+          children: <Widget>[listenBtn, Text(_transcript)],
         ),
       ),
     );

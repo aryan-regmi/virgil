@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:collection';
 import 'dart:ffi';
 import 'dart:isolate';
 
@@ -10,7 +12,11 @@ import 'package:virgil/rust_bridge.dart';
 final _logger = logger;
 
 class SpeechRecognition {
+  // TODO: Add wakeWords, listenDurationMs, and activeListenDuration as parameters!
   SpeechRecognition(LogLevel level) : _level = level;
+
+  /// Max length to listen to the mic for (in milliseconds).
+  static const _listenDurationMs = 1000;
 
   /// The log level of the native library.
   final LogLevel _level;
@@ -19,10 +25,10 @@ class SpeechRecognition {
   late Context _ctx;
 
   /// The transcript.
-  String _transcript = _defaultTranscript;
+  final LinkedHashSet<String> _transcript = LinkedHashSet();
 
-  /// Default transcript message.
-  static const _defaultTranscript = 'Waiting...';
+  /// The processed command.
+  String? command;
 
   /// The port used for FFI communications.
   final _receivePort = ReceivePort();
@@ -47,33 +53,21 @@ class SpeechRecognition {
     } else {
       throw Exception('Failed to initalize Whisper model');
     }
+
+    // Initialize listener
+    _receivePort.listen((message) async {
+      if (message == null) {
+        _logger.e('Invalid message');
+        return;
+      }
+      _transcript.add(message);
+    });
   }
 
-  /// Returns a stream builder on the native `ReceivePort` stream.
-  StreamBuilder<dynamic> streamBuilder() {
-    return StreamBuilder(
-      stream: _receivePort,
-      builder: (ctx, snapshot) {
-        if (isListening && snapshot.hasData) {
-          String? message = snapshot.data;
-          if (message == null) {
-            _logger.e('Invalid message');
-            return Text('Invalid message');
-          }
-          _transcript = message;
-          return Text(_transcript);
-        }
-        return Text(_defaultTranscript);
-      },
-    );
-  }
-
-  // TODO: Actually process commands!
-  //
   /// Starts listening to the mic and running speech recognition.
   Future<void> startListening() async {
     isListening = true;
-    await transcribeMicInput(_ctx, 1000);
+    await transcribeMicInput(_ctx, _listenDurationMs);
   }
 
   /// Stops the microphone.
@@ -85,5 +79,36 @@ class SpeechRecognition {
   /// Cleans up resources.
   void dispose() {
     _receivePort.close();
+    _transcript.clear();
+  }
+
+  Future<void> processCommands() async {
+    var sentence = '';
+    if (_transcript.isNotEmpty && _transcript.length >= 2) {
+      sentence = _transcript.toList().sublist(_transcript.length - 2).join();
+    } else if (_transcript.isNotEmpty) {
+      sentence = _transcript.last;
+    }
+    _logger.e(_transcript);
+
+    // var sentence = transcript;
+    if (sentence.isNotEmpty) {
+      final commandLowercase = sentence.toLowerCase();
+
+      const openStr = 'open';
+      final openIdx = commandLowercase.indexOf(openStr);
+      if (openIdx >= 0) {
+        var cmd = sentence.substring(openIdx + openStr.length).trim();
+        if (cmd.isNotEmpty) {
+          command = 'Open: $cmd';
+        } else {
+          command = null;
+        }
+
+        // TODO: Actually open!
+      }
+    }
+
+    // transcript.clear();
   }
 }

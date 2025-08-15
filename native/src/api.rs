@@ -30,6 +30,8 @@ pub static RUN: LazyLock<Mutex<bool>> = LazyLock::new(|| Mutex::new(false));
 
 pub static LOGS_SET: LazyLock<Mutex<bool>> = LazyLock::new(|| Mutex::new(false));
 
+const ACTIVE_LISTEN_DURATION_SECS: u64 = 5;
+
 /// Sets up logging for the library.
 #[unsafe(no_mangle)]
 pub fn setup_logs(level: usize) {
@@ -264,7 +266,8 @@ async fn process(
                     if let Some(recorded_time) = detected_time {
                         let elasped = Instant::now() - recorded_time;
 
-                        if elasped >= Duration::from_secs(3) {
+                        // FIXME: Make duration dynamic!
+                        if elasped >= Duration::from_secs(ACTIVE_LISTEN_DURATION_SECS) {
                             wake_word_detected = false;
                             detected_time = None;
                             desired_num_samples = original_desired_num_samples;
