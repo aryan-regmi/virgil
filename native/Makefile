@@ -12,12 +12,18 @@ ndk_path := ~/Android/Sdk/ndk/$(ndk_version)
 ndk_toolchain := $(ndk_path)/toolchains/llvm/prebuilt/linux-x86_64
 sysroot = $(ndk_toolchain)/sysroot
 
+ort_lib_location = ../android/app/src/main/jniLibs/armeabi-v7a
+
 outdir = ../android/app/src/main/jniLibs/
 
 build_v7:
 	ANDROID_NDK_HOME=$(ndk_path) \
 	ANDROID_NDK=$(ndk_path) \
 	CMAKE_ANDROID_ARCH_ABI=$(abi_v7) \
+	BINDGEN_EXTRA_CLANG_ARGS="-ORT_DYLIB_PATH=$(ort_lib_location)/libonnxruntime.so -ORT_LIB_LOCATION=$(ort_lib_location) -L$(ort_lib_location)/libonnxruntime.so" \
+	ORT_LIB_LOCATION=$(ort_lib_location) \
+	ORT_DYLIB_PATH=$(ort_lib_location)/libonnxruntime.so \
+	ONNX_RUNTIME_LIB=$(ort_lib_location)/libonnxruntime.so \
 	cargo ndk -p $(android_platform) -t $(target_v7) build --release && \
 	cp -r target/$(target_v7)/release/*.so $(outdir)/$(abi_v7)
 

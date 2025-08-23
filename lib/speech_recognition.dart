@@ -3,7 +3,6 @@ import 'dart:collection';
 import 'dart:ffi';
 import 'dart:isolate';
 
-import 'package:flutter/material.dart';
 import 'package:virgil/main.dart';
 import 'package:virgil/model_manager.dart';
 import 'package:virgil/native.dart';
@@ -14,9 +13,6 @@ final _logger = logger;
 class SpeechRecognition {
   // TODO: Add wakeWords, listenDurationMs, and activeListenDuration as parameters!
   SpeechRecognition(LogLevel level) : _level = level;
-
-  /// Max length to listen to the mic for (in milliseconds).
-  static const _listenDurationMs = 1000;
 
   /// The log level of the native library.
   final LogLevel _level;
@@ -67,7 +63,7 @@ class SpeechRecognition {
   /// Starts listening to the mic and running speech recognition.
   Future<void> startListening() async {
     isListening = true;
-    await transcribeMicInput(_ctx, _listenDurationMs);
+    await transcribeMicInput(_ctx);
   }
 
   /// Stops the microphone.

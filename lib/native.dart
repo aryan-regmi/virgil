@@ -128,12 +128,10 @@ typedef _InitDartPortFn = void Function(int port);
 // fn transcribe_speech(
 //   ctx: *mut ffi::c_void,
 //   ctx_len: usize,
-//   listen_duration_ms: usize
 // )
 typedef _TranscribeSpeechNativeFn =
-    Void Function(Pointer<Void> ctx, UintPtr ctxLen, UintPtr listenDurationMs);
-typedef _TranscribeSpeechFn =
-    void Function(Pointer<Void> ctx, int ctxLen, int listenDurationMs);
+    Void Function(Pointer<Void> ctx, UintPtr ctxLen);
+typedef _TranscribeSpeechFn = void Function(Pointer<Void> ctx, int ctxLen);
 
 // pub fn stop_mic()
 typedef _StopMicNativeFn = Void Function();

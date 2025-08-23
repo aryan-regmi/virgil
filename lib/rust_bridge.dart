@@ -66,14 +66,11 @@ Future<void> initFFI(int port) async {
   initDartPort(port);
 }
 
-Future<void> transcribeMicInput(Context ctx, int listenDurationMs) async {
-  _transcribeMicInput([ctx, listenDurationMs]);
+Future<void> transcribeMicInput(Context ctx) async {
+  _transcribeMicInput(ctx);
 }
 
-void _transcribeMicInput(List<dynamic> args) {
-  final ctx = args[0];
-  final listenDurationMs = args[1];
-
+void _transcribeMicInput(Context ctx) {
   // Encode arguments
   final ctxEncoded = BincodeWriter.encode(ctx);
 
@@ -86,7 +83,7 @@ void _transcribeMicInput(List<dynamic> args) {
   ctxBytes.setAll(0, ctxEncoded);
 
   // Call Rust function
-  transcribeSpeech(ctxPtr.cast(), ctxEncoded.length, listenDurationMs);
+  transcribeSpeech(ctxPtr.cast(), ctxEncoded.length);
 
   // Free allocations
   _freeAllocs(dartAllocs: dartAllocs, nativeAllocs: {});
